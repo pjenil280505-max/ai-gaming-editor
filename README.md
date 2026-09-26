@@ -36,6 +36,8 @@ S3–S6 (master, analysis copy, QC, report) and resume logic do not exist yet.
 
 No GitHub token is needed while the repo is public (DEC-018).
 
+**Creating a tag (owner, after merging an increment's PR; DEC-019).** In the phone browser open the repo on github.com → **Releases** → **Draft a new release** → **Choose a tag**, type the name Claude gave you (e.g. `v0.2.0`) and pick *Create new tag on publish* → target **main** → **Publish release**.
+
 ## Running the tests
 
 Needs Python 3.10+, PyYAML and `ffmpeg` + `ffprobe` on the PATH. From the repo root:
