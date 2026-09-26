@@ -28,15 +28,15 @@ S3–S6 (master, analysis copy, QC, report) and resume logic do not exist yet.
 ## Running on Colab from Android
 
 1. Upload a recording to **My Drive › AIEditor › inbox** (create the folders once).
-2. Open the notebook at the tag you were given, e.g. for `v0.2.0`:
-   `https://colab.research.google.com/github/pjenil280505-max/ai-gaming-editor/blob/v0.2.0/notebooks/run_pipeline.ipynb`
+2. Open the notebook at the tag you were given, e.g. for `v0.2.1`:
+   `https://colab.research.google.com/github/pjenil280505-max/ai-gaming-editor/blob/v0.2.1/notebooks/run_pipeline.ipynb`
 3. Tap ▶ on C1 (allow Drive access), then C2 and C3.
 4. Run C4 with **recording** empty to see the numbered inbox list, type the number, run C4 again.
 5. C4 prints where `media_info.json` was saved on Drive.
 
 No GitHub token is needed while the repo is public (DEC-018).
 
-**Creating a tag (owner, after merging an increment's PR; DEC-019).** In the phone browser open the repo on github.com → **Releases** → **Draft a new release** → **Choose a tag**, type the name Claude gave you (e.g. `v0.2.0`) and pick *Create new tag on publish* → target **main** → **Publish release**.
+**Creating a tag (owner, after merging an increment's PR; DEC-019).** In the phone browser open the repo on github.com → **Releases** → **Draft a new release** → **Select tag**, type the name Claude gave you (e.g. `v0.2.1`; "Nothing to show" is normal) → **Create new tag**, target **main** → release title = the tag name → **Publish release**.
 
 ## Running the tests
 
