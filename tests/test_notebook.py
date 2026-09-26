@@ -107,6 +107,14 @@ class StructureTest(unittest.TestCase):
             self.assertTrue(callable(getattr(run, name)))
 
 
+    def test_release_numbers_agree(self):
+        # core.VERSION, C5's NOTEBOOK_VERSION and C2's default tag must move together (DEC-027)
+        import core
+        self.assertIn(f'tag = "v{core.VERSION}"', cell("C2"))
+        self.assertIn(f'NOTEBOOK_VERSION = "{core.VERSION}"', cell("C5"))
+        self.assertIn("notebook_version=NOTEBOOK_VERSION", cell("C5"))
+
+
 class ExecuteCellsTest(unittest.TestCase):
 
     def exec_cell(self, source: str, namespace: dict | None = None) -> str:
@@ -155,6 +163,19 @@ class ExecuteCellsTest(unittest.TestCase):
         self.assertIn("not found", self.exec_cell(cell("C4")))
         out = self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'))
         self.assertIn("'clip.mp4' is not a recording in the inbox", out)
+
+    def test_c5_refuses_code_from_another_release(self):
+        import core
+        real = core.VERSION
+        try:
+            core.VERSION = "0.3.9"
+            out = self.exec_cell(cell("C5"))
+            del core.VERSION                     # code from before release numbers existed
+            older = self.exec_cell(cell("C5"))
+        finally:
+            core.VERSION = real
+        self.assertIn(f"C2 downloaded release 0.3.9. Set C2's tag to v{real}", out)
+        self.assertIn("C2 downloaded release 0.3.0 or older", older)
 
     def test_c5_needs_c4_then_reports_stage_error(self):
         self.assertIn("Choose a recording in cell C4 first", self.exec_cell(cell("C5")))

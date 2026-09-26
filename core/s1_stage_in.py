@@ -6,6 +6,7 @@ The inbox file is only read, never modified (Phase 0 rule).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import re
 from dataclasses import dataclass
@@ -70,21 +71,25 @@ def match_id_with_source(path: Path) -> tuple[str, str]:
     return f"{stamp}-{digest.hexdigest()[:6]}", source
 
 
-def run(pre: Preflight, force: bool = False,
-        progress: Optional[Callable[[float], None]] = None) -> StageIn:
+def identify(pre: Preflight) -> StageIn:
+    """Match ID and local paths only; copies nothing (the resume plan decides that next)."""
     try:
         mid, source = match_id_with_source(pre.source)
     except OSError as exc:
         raise StageError(TITLE, [f"Could not read {pre.source.name} from Drive: {exc.strerror or exc}. "
                                  f"Check the upload finished, then re-run."]) from None
-
     local_dir = pre.paths.local_work / mid
     local_source = local_dir / ("source" + pre.source.suffix.lower())
-    size = pre.source.stat().st_size
+    return StageIn(mid, local_dir, local_source, pre.source.stat().st_size, copied=False,
+                   time_source=source)
 
+
+def fetch(pre: Preflight, stage_in: StageIn, force: bool = False,
+          progress: Optional[Callable[[float], None]] = None) -> StageIn:
+    """Copy the recording to local disk unless a same-size copy is already there."""
+    size, local_source = stage_in.size_bytes, stage_in.local_source
     if not force and local_source.is_file() and local_source.stat().st_size == size:
-        return StageIn(mid, local_dir, local_source, size, copied=False, time_source=source)
-
+        return stage_in
     try:
         files.copy_file(pre.source, local_source, expected_size=size, progress=progress)
     except files.SizeMismatch as exc:
@@ -96,4 +101,9 @@ def run(pre: Preflight, force: bool = False,
         raise StageError(TITLE, [f"Copying {pre.source.name} to local disk failed: "
                                  f"{exc.strerror or exc}. Re-run; if it keeps failing, "
                                  f"re-upload the recording."]) from None
-    return StageIn(mid, local_dir, local_source, size, copied=True, time_source=source)
+    return dataclasses.replace(stage_in, copied=True)
+
+
+def run(pre: Preflight, force: bool = False,
+        progress: Optional[Callable[[float], None]] = None) -> StageIn:
+    return fetch(pre, identify(pre), force=force, progress=progress)

@@ -33,7 +33,7 @@ The time is the recording time written in the file name (`YYYY-MM-DD-HH-MM-SS`, 
 - **S3 Master:** constant frame rate at target_fps; rotation applied to pixels and rotation metadata cleared; timestamps start at 0 with audio start offset corrected; audio resampled to 48 kHz AAC at ORIGINAL levels (no loudness normalisation — DEC-002). Re-probe output to confirm constant frame durations. Details: DEC-022.
 - **S4 Analysis copy:** from master — video at width 640 (aspect kept), 10 fps; audio mono 16 kHz WAV; duration within one analysis frame of master. Details: DEC-023.
 - **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame; black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied.
-- **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S2–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run.
+- **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S2–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run. Report details: DEC-026.
 
 ## Resume rule
 
@@ -46,7 +46,7 @@ Exceptions — S0 Preflight, S1 Stage-in and S6 Stage-out:
 
 Why: S0's environment checks (Drive mounted, free disk, FFmpeg) must be fresh after a Colab disconnect (DEC-010); S1's local copies are always gone after a disconnect (DEC-012); S6's report describes the current run (DEC-011).
 
-The "listed output exists" check looks in the Drive work dir, because only Drive copies survive a disconnect (DEC-012).
+The "listed output exists" check looks in the Drive work dir, because only Drive copies survive a disconnect (DEC-012). Fingerprints, markers and what S1 copies back: DEC-025.
 
 ## Contracts
 
@@ -61,8 +61,8 @@ Field-level details (names, types, allowed values): DEC-007 and `schemas/*.json`
 - **C1** mount Drive + S0. S0 actually runs in C4, because it needs the code from C2 and the recording chosen in C4 (DEC-013).
 - **C2** clone/pull a pinned tag using GITHUB_TOKEN from Colab Secrets. The token is optional while the repo is public (DEC-018); Claude pushes a tag after each merged increment (DEC-015).
 - **C3** install PyYAML if missing.
-- **C4** form: choose /inbox file, target_fps override, force re-run. From 0.3 C4 only chooses; C5 runs the stages (DEC-024).
-- **C5** run with live progress %. Runs S0 → S4 in 0.3 (DEC-024).
+- **C4** form: choose /inbox file, target_fps override, force re-run. From 0.3 C4 only chooses; C5 runs the stages (DEC-024). Force re-run ignores every stage record (DEC-025).
+- **C5** run with live progress %. Runs S0 → S4 in 0.3 (DEC-024); from 0.4 skips finished stages, ends with the S6 report and refuses code from a different release (DEC-025–027).
 - **C6** summary table + Drive paths.
 - **C7** self-test: run the unit tests on Colab's FFmpeg.
 
