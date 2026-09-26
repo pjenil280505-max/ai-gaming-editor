@@ -5,10 +5,9 @@
   "type": "object",
   "properties": {
     "stage": {
-      "description": "Stage id.",
+      "description": "Stage id. S0 always runs, so it never has a marker (DEC-010).",
       "type": "string",
       "enum": [
-        "s0_preflight",
         "s1_stage_in",
         "s2_probe",
         "s3_master",

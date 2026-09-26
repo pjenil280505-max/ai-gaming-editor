@@ -200,6 +200,12 @@ class ValidationTest(unittest.TestCase):
         data["status"] = "fail"
         self.assertEqual(len(contracts.validate_data(StageMarker, data)), 1)
 
+    def test_no_marker_for_s0(self):
+        data = stage_marker()
+        data["stage"] = "s0_preflight"
+        self.assertProblems(StageMarker, data, [
+            f"stage: must be one of {list(contracts.STAGES[1:])}, got 's0_preflight'"])
+
     def test_output_paths_must_be_relative_posix(self):
         good = ["master.mp4", "stages/s3_master.done.json", "logs/..hidden"]
         bad = ["/content/work/master.mp4", "../master.mp4", "logs/../../x", "logs\\s3.txt", ""]

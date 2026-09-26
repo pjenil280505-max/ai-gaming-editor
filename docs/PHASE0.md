@@ -17,7 +17,7 @@ Objective: any Android recording → verified constant-frame-rate master + analy
 - **qc:** `duration_tolerance_s` 0.1; `av_sync_tolerance_frames` 1
 - **loudness:** `target_lufs` -14 (applied at render time only; Phase 0 only measures)
 
-Config fingerprint = hash of the keys each stage actually uses.
+Config fingerprint = hash of the keys each stage actually uses. Path defaults: DEC-005; which keys each stage uses: DEC-006.
 
 ## Match ID
 
@@ -37,7 +37,11 @@ Config fingerprint = hash of the keys each stage actually uses.
 
 Skip a stage only if its marker exists AND input fingerprint, config fingerprint and code version match AND every listed output exists at its recorded size. Otherwise that stage and all later stages re-run. Markers are written only after outputs are complete.
 
+Exception: S0 Preflight runs on every run and never writes a marker, because its environment checks (Drive mounted, free disk, FFmpeg) must be fresh after a Colab disconnect (DEC-010).
+
 ## Contracts
+
+Field-level details (names, types, allowed values): DEC-007 and `schemas/*.json`.
 
 - **media_info.json** — fields as in S2.
 - **Stage marker** — stage, status, input_fingerprint, config_fingerprint, code_version (git SHA), outputs [{path, size_bytes}], started_at, finished_at.
@@ -55,7 +59,7 @@ Skip a stage only if its marker exists AND input fingerprint, config fingerprint
 
 ## Test fixtures
 
-Generated at test time, never committed; each has a white flash + 1 kHz beep every 5 s.
+Generated at test time, never committed; each has a white flash + 1 kHz beep every 5 s. Details: DEC-008.
 
 - **F1** constant 30 fps, 20 s, H.264 + AAC, 320x180
 - **F2** variable frame rate: sections at 60/45/30 fps, 20 s
