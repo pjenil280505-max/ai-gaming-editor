@@ -195,8 +195,8 @@ class OutputFile:
 
 @dataclass
 class StageMarker(_Contract):
-    stage: str = _f("Stage id. S0 always runs, so it never has a marker (DEC-010).",
-                    enum=list(STAGES[1:]))
+    stage: str = _f("Stage id. S0 and S6 run every time, so they never have a marker "
+                    "(DEC-010, DEC-011).", enum=list(STAGES[1:-1]))
     status: str = _f(
         "Outcome of the completed stage (markers are written only after success).",
         enum=["pass", "warn"],

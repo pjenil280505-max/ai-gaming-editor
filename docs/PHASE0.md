@@ -31,13 +31,13 @@ Config fingerprint = hash of the keys each stage actually uses. Path defaults: D
 - **S3 Master:** constant frame rate at target_fps; rotation applied to pixels and rotation metadata cleared; timestamps start at 0 with audio start offset corrected; audio resampled to 48 kHz AAC at ORIGINAL levels (no loudness normalisation — DEC-002). Re-probe output to confirm constant frame durations.
 - **S4 Analysis copy:** from master — video at width 640 (aspect kept), 10 fps; audio mono 16 kHz WAV; duration within one analysis frame of master.
 - **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame; black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied.
-- **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`.
+- **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S1–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run.
 
 ## Resume rule
 
 Skip a stage only if its marker exists AND input fingerprint, config fingerprint and code version match AND every listed output exists at its recorded size. Otherwise that stage and all later stages re-run. Markers are written only after outputs are complete.
 
-Exception: S0 Preflight runs on every run and never writes a marker, because its environment checks (Drive mounted, free disk, FFmpeg) must be fresh after a Colab disconnect (DEC-010).
+Exceptions: S0 Preflight and S6 Stage-out run on every run and never write a marker. S0's environment checks (Drive mounted, free disk, FFmpeg) must be fresh after a Colab disconnect (DEC-010); S6's report describes the current run (DEC-011).
 
 ## Contracts
 
