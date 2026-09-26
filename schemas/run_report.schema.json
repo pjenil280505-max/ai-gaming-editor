@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "run_report",
+  "description": "Summary of one pipeline run for one match (docs/PHASE0.md S6). Generated from core/contracts.py by `python -m core.contracts`; do not edit by hand.",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "description": "Unique id of this run.",
+      "type": "string",
+      "minLength": 1
+    },
+    "match_id": {
+      "description": "YYYYMMDD-HHMM (file mtime) + '-' + 6 hex chars of the content hash.",
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{4}-[0-9a-f]{6}$"
+    },
+    "code_version": {
+      "description": "Git commit SHA of the pipeline code.",
+      "type": "string",
+      "minLength": 1
+    },
+    "config_fingerprint": {
+      "description": "SHA-256 (hex) of every content-affecting config key (core.config.config_fingerprint).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "environment": {
+      "description": "Where the run happened.",
+      "type": "object",
+      "properties": {
+        "platform": {
+          "description": "Platform string (e.g. from platform.platform()).",
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu_count": {
+          "description": "Logical CPU count.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "gpu": {
+          "description": "GPU name; null when no GPU.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ffmpeg_version": {
+          "description": "ffmpeg version string.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "platform",
+        "cpu_count",
+        "gpu",
+        "ffmpeg_version"
+      ],
+      "additionalProperties": false
+    },
+    "stages": {
+      "description": "One entry per stage attempted or skipped, in run order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Stage id.",
+            "type": "string",
+            "enum": [
+              "s0_preflight",
+              "s1_stage_in",
+              "s2_probe",
+              "s3_master",
+              "s4_analysis",
+              "s5_qc",
+              "s6_stage_out"
+            ]
+          },
+          "status": {
+            "description": "Stage outcome.",
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ]
+          },
+          "started_at": {
+            "description": "ISO 8601 timestamp with timezone.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "description": "ISO 8601 timestamp with timezone.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration_s": {
+            "description": "Wall-clock seconds.",
+            "type": "number",
+            "minimum": 0
+          },
+          "skipped": {
+            "description": "True when the resume rule skipped this stage.",
+            "type": "boolean"
+          },
+          "warnings": {
+            "description": "Plain-English warnings.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errors": {
+            "description": "Plain-English errors.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "started_at",
+          "finished_at",
+          "duration_s",
+          "skipped",
+          "warnings",
+          "errors"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "qc": {
+      "description": "QC results (S5).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "description": "QC check name.",
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "description": "Check outcome.",
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ]
+          },
+          "value": {
+            "description": "Measured value (number, text, list of spans, or null)."
+          },
+          "threshold": {
+            "description": "Threshold the value was compared with, or null."
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "value",
+          "threshold"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "totals": {
+      "description": "Run totals.",
+      "type": "object",
+      "properties": {
+        "footage_minutes": {
+          "description": "Source duration, minutes.",
+          "type": "number",
+          "minimum": 0
+        },
+        "processing_minutes": {
+          "description": "Total wall-clock processing time, minutes.",
+          "type": "number",
+          "minimum": 0
+        },
+        "minutes_per_footage_minute": {
+          "description": "processing_minutes / footage_minutes; null when footage_minutes is 0.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "footage_minutes",
+        "processing_minutes",
+        "minutes_per_footage_minute"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "run_id",
+    "match_id",
+    "code_version",
+    "config_fingerprint",
+    "environment",
+    "stages",
+    "qc",
+    "totals"
+  ],
+  "additionalProperties": false
+}
