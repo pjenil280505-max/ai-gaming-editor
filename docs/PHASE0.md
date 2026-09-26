@@ -26,18 +26,25 @@ Config fingerprint = hash of the keys each stage actually uses. Path defaults: D
 ## Stages
 
 - **S0 Preflight:** ffmpeg/ffprobe present + versions; CPU count; GPU name; GPU encoder availability (record only); free local disk ≥ 3× input size; Drive mounted; config valid. Fail with a plain-English message.
-- **S1 Stage-in:** compute match_id; copy raw file to local disk; verify size. On resume, copy finished outputs back from the Drive work dir instead of recomputing.
+- **S1 Stage-in:** compute match_id; copy raw file to local disk; verify size. On resume, copy finished outputs back from the Drive work dir instead of recomputing. Runs on every run (DEC-012): on resume it recomputes match_id and copies back from Drive only the files the first unfinished stage needs.
 - **S2 Probe:** write `media_info.json` — container, duration, size; video codec, width, height, rotation, display aspect (e.g. 20:9), r_frame_rate, avg_frame_rate, frame-duration stats (min/median/max/stdev from packet timestamps), is_vfr + evidence; every audio track (codec, rate, channels, start offset); chosen target_fps; chosen audio track; warnings. Fail if: no video stream, unreadable, or duration < 5 s. No audio → video-only mode + warning. More than one audio track → configured track + warning.
 - **S3 Master:** constant frame rate at target_fps; rotation applied to pixels and rotation metadata cleared; timestamps start at 0 with audio start offset corrected; audio resampled to 48 kHz AAC at ORIGINAL levels (no loudness normalisation — DEC-002). Re-probe output to confirm constant frame durations.
 - **S4 Analysis copy:** from master — video at width 640 (aspect kept), 10 fps; audio mono 16 kHz WAV; duration within one analysis frame of master.
 - **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame; black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied.
-- **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S1–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run.
+- **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S2–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run.
 
 ## Resume rule
 
 Skip a stage only if its marker exists AND input fingerprint, config fingerprint and code version match AND every listed output exists at its recorded size. Otherwise that stage and all later stages re-run. Markers are written only after outputs are complete.
 
-Exceptions: S0 Preflight and S6 Stage-out run on every run and never write a marker. S0's environment checks (Drive mounted, free disk, FFmpeg) must be fresh after a Colab disconnect (DEC-010); S6's report describes the current run (DEC-011).
+Exceptions — S0 Preflight, S1 Stage-in and S6 Stage-out:
+- run on every run and are never skipped;
+- never write a marker;
+- never force later stages to re-run. The resume rule applies only to S2–S5.
+
+Why: S0's environment checks (Drive mounted, free disk, FFmpeg) must be fresh after a Colab disconnect (DEC-010); S1's local copies are always gone after a disconnect (DEC-012); S6's report describes the current run (DEC-011).
+
+The "listed output exists" check looks in the Drive work dir, because only Drive copies survive a disconnect (DEC-012).
 
 ## Contracts
 
@@ -91,7 +98,7 @@ Generated at test time, never committed; each has a white flash + 1 kHz beep eve
 - **A2** constant frame rate confirmed.
 - **A3** duration within ±0.1 s.
 - **A4** audio/video lengths within 1 frame + owner spot-checks 3 kick sounds.
-- **A5** deliberate disconnect during S3 → re-run skips S1–S2.
+- **A5** deliberate disconnect during S3 → re-run skips S2 and restarts S3.
 - **A6** processing speed recorded.
 - **A7** report saved to `docs/reports/phase0.md`.
 

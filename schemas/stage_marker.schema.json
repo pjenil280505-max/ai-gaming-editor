@@ -5,10 +5,9 @@
   "type": "object",
   "properties": {
     "stage": {
-      "description": "Stage id. S0 and S6 run every time, so they never have a marker (DEC-010, DEC-011).",
+      "description": "Stage id. S0, S1 and S6 run every time, so they never have a marker (DEC-010 to DEC-012).",
       "type": "string",
       "enum": [
-        "s1_stage_in",
         "s2_probe",
         "s3_master",
         "s4_analysis",

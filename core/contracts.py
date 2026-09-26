@@ -35,6 +35,11 @@ STAGES = (
     "s6_stage_out",
 )
 
+# Stages exempt from the resume rule: they run every time, write no marker and
+# never force later stages to re-run (DEC-010, DEC-011, DEC-012).
+ALWAYS_RUN_STAGES = ("s0_preflight", "s1_stage_in", "s6_stage_out")
+MARKER_STAGES = tuple(s for s in STAGES if s not in ALWAYS_RUN_STAGES)
+
 # One status vocabulary for stages and QC checks. A stage marker is written
 # only after a stage completes, so a marker is never "fail".
 STATUSES = ("pass", "warn", "fail")
@@ -195,8 +200,8 @@ class OutputFile:
 
 @dataclass
 class StageMarker(_Contract):
-    stage: str = _f("Stage id. S0 and S6 run every time, so they never have a marker "
-                    "(DEC-010, DEC-011).", enum=list(STAGES[1:-1]))
+    stage: str = _f("Stage id. S0, S1 and S6 run every time, so they never have a marker "
+                    "(DEC-010 to DEC-012).", enum=list(MARKER_STAGES))
     status: str = _f(
         "Outcome of the completed stage (markers are written only after success).",
         enum=["pass", "warn"],

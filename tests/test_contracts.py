@@ -201,12 +201,14 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(len(contracts.validate_data(StageMarker, data)), 1)
 
     def test_no_marker_for_always_run_stages(self):
-        for stage in ("s0_preflight", "s6_stage_out"):
+        self.assertEqual(contracts.MARKER_STAGES,
+                         ("s2_probe", "s3_master", "s4_analysis", "s5_qc"))
+        for stage in ("s0_preflight", "s1_stage_in", "s6_stage_out"):
             data = stage_marker()
             data["stage"] = stage
             with self.subTest(stage=stage):
                 self.assertProblems(StageMarker, data, [
-                    f"stage: must be one of {list(contracts.STAGES[1:-1])}, got '{stage}'"])
+                    f"stage: must be one of {list(contracts.MARKER_STAGES)}, got '{stage}'"])
 
     def test_output_paths_must_be_relative_posix(self):
         good = ["master.mp4", "stages/s3_master.done.json", "logs/..hidden"]
