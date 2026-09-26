@@ -173,9 +173,9 @@ def _set_rotation(src: Path, out: Path, degrees_cw: int) -> None:
           "-display_rotation", str(-degrees_cw), "-i", str(src), "-c", "copy", str(out)])
 
 
-def generate(name: str, directory: Path) -> Path:
-    """Generate fixture `name` into `directory` and return its path."""
-    spec = SPECS[name]
+def generate(name: str, directory: Path, spec: Optional[Spec] = None) -> Path:
+    """Generate fixture `name` (or a one-off `spec` saved under that name) into `directory`."""
+    spec = spec or SPECS[name]
     out = directory / f"{name}.mp4"
     started = time.monotonic()
     if spec.rotation_cw or spec.truncated:

@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import posixpath
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -207,3 +208,38 @@ def stage_fingerprint(config: dict, stage: str) -> str:
         raise KeyError(f"unknown stage {stage!r}; expected one of {', '.join(STAGES)}")
     return config_fingerprint(config, STAGE_CONFIG_KEYS[stage])
 
+
+
+def with_overrides(config: dict, overrides: dict[str, Any]) -> dict:
+    """Copy of `config` with dotted-key overrides applied and re-validated (notebook form)."""
+    changed = json.loads(json.dumps(config))
+    problems = []
+    for key, value in overrides.items():
+        if key not in SPEC:
+            problems.append(f"{key}: unknown key (typo?)")
+            continue
+        section, name = key.split(".", 1)
+        changed[section][name] = value
+    problems += validate_config(changed)
+    if problems:
+        raise ConfigError(problems, "notebook overrides")
+    return changed
+
+
+@dataclass(frozen=True)
+class Paths:
+    drive_root: Path
+    inbox: Path
+    work: Path
+    local_work: Path
+
+
+def resolve_paths(config: dict) -> Paths:
+    """Absolute paths; relative inbox/work live inside drive_root (DEC-005)."""
+    root = Path(get(config, "paths.drive_root"))
+    return Paths(
+        drive_root=root,
+        inbox=root / get(config, "paths.inbox"),
+        work=root / get(config, "paths.work"),
+        local_work=Path(get(config, "paths.local_work")),
+    )
