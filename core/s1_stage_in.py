@@ -7,19 +7,18 @@ The inbox file is only read, never modified (Phase 0 rule).
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+from core import files
 from core.errors import StageError
 from core.s0_preflight import Preflight, human_size
 
 TITLE = "S1 Stage-in"
 HASH_BYTES = 8 * 1024 * 1024        # "8 MB" in the match-ID rule, read as 8 MiB (DEC-014)
-COPY_CHUNK = 16 * 1024 * 1024
 # Recording time in the file name, e.g. Record_2026-08-21-21-54-38_<id>.mp4 (DEC-021)
 NAME_TIME = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})(?!\d)")
 FROM_NAME = "recording time in the file name"
@@ -71,16 +70,6 @@ def match_id_with_source(path: Path) -> tuple[str, str]:
     return f"{stamp}-{digest.hexdigest()[:6]}", source
 
 
-def _copy(src: Path, dst: Path, total: int, progress: Optional[Callable[[float], None]]) -> None:
-    done = 0
-    with open(src, "rb") as fin, open(dst, "wb") as fout:
-        while chunk := fin.read(COPY_CHUNK):
-            fout.write(chunk)
-            done += len(chunk)
-            if progress and total:
-                progress(min(done / total, 1.0))
-
-
 def run(pre: Preflight, force: bool = False,
         progress: Optional[Callable[[float], None]] = None) -> StageIn:
     try:
@@ -96,22 +85,15 @@ def run(pre: Preflight, force: bool = False,
     if not force and local_source.is_file() and local_source.stat().st_size == size:
         return StageIn(mid, local_dir, local_source, size, copied=False, time_source=source)
 
-    partial = local_dir / (local_source.name + ".partial")
     try:
-        local_dir.mkdir(parents=True, exist_ok=True)
-        _copy(pre.source, partial, size, progress)
+        files.copy_file(pre.source, local_source, expected_size=size, progress=progress)
+    except files.SizeMismatch as exc:
+        raise StageError(TITLE, [
+            f"The local copy is {human_size(exc.copied)} but the recording on Drive is "
+            f"{human_size(size)} ({exc.copied} vs {size} bytes). The file may still be "
+            f"uploading; wait for the upload to finish and re-run."]) from None
     except OSError as exc:
-        partial.unlink(missing_ok=True)
         raise StageError(TITLE, [f"Copying {pre.source.name} to local disk failed: "
                                  f"{exc.strerror or exc}. Re-run; if it keeps failing, "
                                  f"re-upload the recording."]) from None
-
-    copied_size = partial.stat().st_size
-    if copied_size != size:
-        partial.unlink(missing_ok=True)
-        raise StageError(TITLE, [
-            f"The local copy is {human_size(copied_size)} but the recording on Drive is "
-            f"{human_size(size)} ({copied_size} vs {size} bytes). The file may still be "
-            f"uploading; wait for the upload to finish and re-run."])
-    os.replace(partial, local_source)
     return StageIn(mid, local_dir, local_source, size, copied=True, time_source=source)

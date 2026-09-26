@@ -120,3 +120,38 @@ class AudioTrack:
         chunk = self.samples[self._index(t0):self._index(t1)]
         crossings = sum(1 for a, b in zip(chunk, chunk[1:]) if (a < 0) != (b < 0))
         return crossings / 2 / (len(chunk) / self.sample_rate)
+
+    def rms(self, t0: float, t1: float) -> float:
+        """Root-mean-square level between t0 and t1 (sample units)."""
+        chunk = self.samples[self._index(t0):self._index(t1)]
+        return (sum(v * v for v in chunk) / len(chunk)) ** 0.5 if chunk else 0.0
+
+
+def top_level_boxes(path: Path) -> list[str]:
+    """MP4 top-level box types in file order (to check 'moov' comes before 'mdat')."""
+    boxes = []
+    with open(path, "rb") as f:
+        while header := f.read(8):
+            if len(header) < 8:
+                break
+            size, kind = int.from_bytes(header[:4], "big"), header[4:8].decode("latin-1")
+            if size == 1:
+                size = int.from_bytes(f.read(8), "big") - 8
+            elif size == 0:
+                boxes.append(kind)
+                break
+            boxes.append(kind)
+            f.seek(size - 8, 1)
+    return boxes
+
+
+def psnr(a_args: list[str], b_args: list[str], filters: str) -> float:
+    """Average PSNR between input A and input B after `filters` (which must end in [a][b]psnr)."""
+    result = subprocess.run(["ffmpeg", "-hide_banner", "-nostdin", *a_args, *b_args,
+                             "-filter_complex", filters, "-frames:v", "1", "-f", "null", "-"],
+                            capture_output=True, text=True)
+    for part in result.stderr.split():
+        if part.startswith("average:"):
+            value = part.split(":", 1)[1]
+            return float("inf") if value == "inf" else float(value)
+    raise MeasureError(result.stderr.strip()[-500:])

@@ -1,4 +1,4 @@
-"""notebooks/run_pipeline.ipynb: structure, and cells C2–C4 executed outside Colab."""
+"""notebooks/run_pipeline.ipynb: structure, and cells C2–C5 executed outside Colab."""
 
 from __future__ import annotations
 
@@ -86,10 +86,10 @@ def local_origin(tmp: Path) -> tuple[Path, Path, str]:
 
 class StructureTest(unittest.TestCase):
 
-    def test_cells_c1_to_c4_in_order_and_valid_python(self):
+    def test_cells_c1_to_c5_in_order_and_valid_python(self):
         titles = [c.splitlines()[0] for c in cells()]
         self.assertEqual([t.split(" · ")[0] for t in titles],
-                         ["#@title C1", "#@title C2", "#@title C3", "#@title C4"])
+                         ["#@title C1", "#@title C2", "#@title C3", "#@title C4", "#@title C5"])
         for source in cells():
             ast.parse(source)
 
@@ -99,20 +99,22 @@ class StructureTest(unittest.TestCase):
         self.assertNotRegex(c2, r"print\([^)]*\{(token|auth)\}")
         self.assertIn('message.replace(secret, "***")', c2)
 
-    def test_c4_form_matches_runner(self):
-        c4 = cell("C4")
+    def test_c4_c5_match_runner(self):
+        c4, c5 = cell("C4"), cell("C5")
         self.assertIn(f"#@param {json.dumps(list(run.TARGET_FPS_CHOICES))}", c4)
-        for name in ("inbox_listing", "run_to_probe"):
-            self.assertIn(f"run.{name}(", c4)
+        for source, name in ((c4, "inbox_listing"), (c4, "describe_choice"), (c5, "run_pipeline")):
+            self.assertIn(f"run.{name}(", source)
             self.assertTrue(callable(getattr(run, name)))
 
 
 class ExecuteCellsTest(unittest.TestCase):
 
-    def exec_cell(self, source: str) -> str:
+    def exec_cell(self, source: str, namespace: dict | None = None) -> str:
+        """Run a cell; pass the same namespace to share variables between cells, as Colab does."""
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            exec(compile(source, "<cell>", "exec"), {"__name__": "__cell__"})
+            exec(compile(source, "<cell>", "exec"),
+                 namespace if namespace is not None else {"__name__": "__cell__"})
         return out.getvalue()
 
     def test_c2_clones_then_moves_to_a_new_tag(self):
@@ -148,10 +150,17 @@ class ExecuteCellsTest(unittest.TestCase):
     def test_c3_reports_installed_pyyaml(self):
         self.assertIn("already installed", self.exec_cell(cell("C3")))
 
-    def test_c4_lists_inbox_or_reports_stage_error(self):
+    def test_c4_lists_inbox_or_explains_choice(self):
         # Outside Colab the default config's Drive paths do not exist.
         self.assertIn("not found", self.exec_cell(cell("C4")))
         out = self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'))
+        self.assertIn("'clip.mp4' is not a recording in the inbox", out)
+
+    def test_c5_needs_c4_then_reports_stage_error(self):
+        self.assertIn("Choose a recording in cell C4 first", self.exec_cell(cell("C5")))
+        shared = {"__name__": "__cell__"}
+        self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'), shared)
+        out = self.exec_cell(cell("C5"), shared)
         self.assertIn("S0 Preflight failed:", out)
         self.assertIn("Run cell C1", out)
 
