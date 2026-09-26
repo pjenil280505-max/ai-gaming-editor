@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from core import contracts, s0_preflight, s1_stage_in
+from core import contracts, files, s0_preflight, s1_stage_in
 from core.errors import StageError
 from fake_drive import FakeDrive
 
@@ -123,7 +123,7 @@ class StageInTest(unittest.TestCase):
     def test_size_mismatch_fails_and_cleans_up(self):
         def short_copy(src, dst, total, progress):
             dst.write_bytes(src.read_bytes()[:-10])
-        with mock.patch.object(s1_stage_in, "_copy", short_copy):
+        with mock.patch.object(files, "_copy_chunks", short_copy):
             with self.assertRaises(StageError) as ctx:
                 s1_stage_in.run(self.pre)
         self.assertIn("may still be uploading", str(ctx.exception))
@@ -134,7 +134,7 @@ class StageInTest(unittest.TestCase):
     def test_read_error_is_plain_english(self):
         def broken_copy(src, dst, total, progress):
             raise OSError(5, "Input/output error")
-        with mock.patch.object(s1_stage_in, "_copy", broken_copy):
+        with mock.patch.object(files, "_copy_chunks", broken_copy):
             with self.assertRaises(StageError) as ctx:
                 s1_stage_in.run(self.pre)
         self.assertRegex(str(ctx.exception), re.escape("Input/output error") + ".*Re-run")

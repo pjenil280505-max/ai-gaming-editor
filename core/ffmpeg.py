@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable, Optional
 
 
 class ToolError(RuntimeError):
@@ -49,3 +50,32 @@ def packet_pts(path: Path, stream_index: int) -> list[int]:
         if field.lstrip("-").isdigit():         # skips N/A
             pts.append(int(field))
     return pts
+
+
+def run_with_progress(cmd: list[str], duration_s: float,
+                      progress: Optional[Callable[[float], None]] = None,
+                      log_path: Optional[Path] = None) -> None:
+    """Run an ffmpeg command, reporting the fraction of `duration_s` done so far.
+
+    Adds `-progress pipe:1 -nostats`; stderr goes to `log_path` (or is discarded
+    unread), so a chatty ffmpeg can never block on a full pipe.
+    """
+    if not available(cmd[0]):
+        raise ToolError(f"{cmd[0]} is not installed")
+    full = cmd[:1] + ["-progress", "pipe:1", "-nostats"] + cmd[1:]
+    log = open(log_path, "w", encoding="utf-8") if log_path else subprocess.DEVNULL
+    try:
+        with subprocess.Popen(full, stdout=subprocess.PIPE, stderr=log, text=True) as proc:
+            for line in proc.stdout:
+                key, _, value = line.strip().partition("=")
+                if key == "out_time_us" and value.isdigit() and progress and duration_s > 0:
+                    progress(min(int(value) / (duration_s * 1e6), 1.0))
+            code = proc.wait()
+    finally:
+        if log_path:
+            log.close()
+    if code != 0:
+        lines = []
+        if log_path and log_path.exists():
+            lines = [x for x in log_path.read_text(errors="replace").splitlines() if x.strip()]
+        raise ToolError(lines[-1] if lines else f"{cmd[0]} exited with code {code}")

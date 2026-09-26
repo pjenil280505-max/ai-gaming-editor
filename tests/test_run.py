@@ -1,4 +1,4 @@
-"""core/run.py: inbox listing, choosing a recording, S0 → S2 end to end."""
+"""core/run.py: inbox listing, choosing a recording, progress lines, S0 → S4 end to end."""
 
 from __future__ import annotations
 
@@ -49,31 +49,76 @@ class InboxTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             run.overrides_for("25")
 
+    def test_describe_choice(self):
+        self.add_at("F1", "clip.mp4", 10)
+        self.assertIn("Selected: clip.mp4", run.describe_choice("1", self.drive.config_path))
+        self.assertIn("Now run cell C5", run.describe_choice("clip.mp4", self.drive.config_path))
+        for bad in ("2", "nope.mp4", "../pipeline.yaml"):
+            with self.subTest(choice=bad):
+                answer = run.describe_choice(bad, self.drive.config_path)
+                self.assertIn("is not a recording in the inbox", answer)
+                self.assertIn("1. clip.mp4", answer)
 
-class RunToProbeTest(unittest.TestCase):
+
+class ProgressLinesTest(unittest.TestCase):
+
+    def test_steps_log_each_step_once(self):
+        lines = []
+        steps = run.Steps(lines.append, 25)
+        for fraction in (0.1, 0.26, 0.3, 0.74, 0.75, 1.0, 1.0):
+            steps(fraction)
+        self.assertEqual(lines, ["  25%", "  50%", "  75%", "  100%"])
+
+    def test_media_steps_show_position_speed_and_time_left(self):
+        lines = []
+        steps = run.media_steps(lines.append, 600.0, 5)
+        time.sleep(0.05)
+        steps(0.5)
+        self.assertRegex(lines[0], r"^  50% · 5:00 of 10:00 · [0-9.]+x real time · about [0-9]+:[0-9]{2} left$")
+
+    def test_clock(self):
+        self.assertEqual(run.clock(0), "0:00")
+        self.assertEqual(run.clock(700.8), "11:41")
+        self.assertEqual(run.clock(3725), "62:05")
+
+
+class RunPipelineTest(unittest.TestCase):
 
     def test_end_to_end_with_log(self):
         with FakeDrive() as drive:
             drive.add("F5")
             lines = []
-            result = run.run_to_probe("1", target_fps="60", config_path=drive.config_path,
+            result = run.run_pipeline("1", target_fps="60", config_path=drive.config_path,
                                       log=lines.append)
-            self.assertTrue(result.drive_media_info.is_file())
+            self.assertEqual(result.drive_dir, drive.work / result.match_id)
+            self.assertEqual(sorted(p.name for p in result.drive_dir.iterdir()),
+                             ["analysis.mp4", "analysis.wav", "master.mp4", "media_info.json"])
             self.assertEqual(result.media_info.target_fps, 60)
-            self.assertEqual(result.drive_media_info.parent.name, result.match_id)
+            self.assertEqual(result.master.fps, 60)
             text = "\n".join(lines)
-            for heading in ("S0 Preflight", "S1 Stage-in", "100%", "(time from file modified time",
-                            "S2 Probe", "WARNING: Found 2 audio tracks"):
+            for heading in ("S0 Preflight", "S1 Stage-in", "(time from file modified time",
+                            "S2 Probe", "WARNING: Found 2 audio tracks", "S3 Master", "% · ",
+                            "x real time (within the D1 limit of 1.5x)", "copied to Drive 100%",
+                            "S4 Analysis copy", "analysis.mp4 640x360, 10 fps", "Done. Files for match"):
                 self.assertIn(heading, text)
             self.assertEqual(result.warnings, result.media_info.warnings)
+
+    def test_video_only_warns_at_s3_and_s4(self):
+        with FakeDrive() as drive:
+            drive.add("F4")
+            lines = []
+            result = run.run_pipeline("1", config_path=drive.config_path, log=lines.append)
+            self.assertEqual(sorted(p.name for p in result.drive_dir.iterdir()),
+                             ["analysis.mp4", "master.mp4", "media_info.json"])
+            self.assertEqual(len(result.warnings), 3)
+            self.assertIn("WARNING: The master has no sound", "\n".join(lines))
 
     def test_failure_raises_stage_error(self):
         with FakeDrive() as drive:
             drive.add("F9")
             with self.assertRaises(StageError) as ctx:
-                run.run_to_probe("F9.mp4", config_path=drive.config_path, log=lambda _: None)
+                run.run_pipeline("F9.mp4", config_path=drive.config_path, log=lambda _: None)
             self.assertTrue(str(ctx.exception).startswith("S2 Probe failed:"))
+            self.assertFalse(drive.work.exists())
 
 
-if __name__ == "__main__":
-    unittest.main()

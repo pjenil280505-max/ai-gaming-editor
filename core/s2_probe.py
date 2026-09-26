@@ -6,7 +6,6 @@ leaves no media_info.json behind. Detection rules are in DEC-016.
 
 from __future__ import annotations
 
-import os
 import statistics
 from dataclasses import dataclass
 from fractions import Fraction
@@ -14,7 +13,7 @@ from math import gcd
 from pathlib import Path
 from typing import Optional
 
-from core import ffmpeg
+from core import ffmpeg, files
 from core.config import get
 from core.contracts import AudioTrack, FrameDurationStats, MediaInfo, VideoInfo
 from core.errors import StageError
@@ -191,21 +190,14 @@ def measure(path: Path, config: dict, name: str) -> MediaInfo:
     return media_info
 
 
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(path.name + ".partial")
-    partial.write_text(text, encoding="utf-8")
-    os.replace(partial, path)
-
-
 def run(pre: Preflight, stage_in: StageIn) -> Probe:
     media_info = measure(stage_in.local_source, pre.config, pre.source.name)
     text = media_info.to_json()
     local_path = stage_in.local_dir / FILE_NAME
     drive_path = pre.paths.work / stage_in.match_id / FILE_NAME
-    _write(local_path, text)
+    files.write_text(local_path, text)
     try:
-        _write(drive_path, text)
+        files.write_text(drive_path, text)
     except OSError as exc:
         raise StageError(TITLE, [f"Could not save {FILE_NAME} to Drive ({drive_path}): "
                                  f"{exc.strerror or exc}. Check Drive is mounted and not full."]) from None
