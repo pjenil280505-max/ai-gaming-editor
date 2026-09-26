@@ -6,7 +6,8 @@ import os
 import time
 import unittest
 
-from core import run
+from core import VERSION, run
+from core.contracts import RunReport
 from core.errors import StageError
 from fake_drive import FakeDrive
 
@@ -92,14 +93,17 @@ class RunPipelineTest(unittest.TestCase):
                                       log=lines.append)
             self.assertEqual(result.drive_dir, drive.work / result.match_id)
             self.assertEqual(sorted(p.name for p in result.drive_dir.iterdir()),
-                             ["analysis.mp4", "analysis.wav", "master.mp4", "media_info.json"])
+                             ["analysis.mp4", "analysis.wav", "logs", "master.mp4", "media_info.json",
+                              "run_report.json", "stages", "summary.txt"])
+            self.assertEqual(result.skipped, [])
             self.assertEqual(result.media_info.target_fps, 60)
             self.assertEqual(result.master.fps, 60)
             text = "\n".join(lines)
             for heading in ("S0 Preflight", "S1 Stage-in", "(time from file modified time",
                             "S2 Probe", "WARNING: Found 2 audio tracks", "S3 Master", "% · ",
                             "x real time (within the D1 limit of 1.5x)", "copied to Drive 100%",
-                            "S4 Analysis copy", "analysis.mp4 640x360, 10 fps", "Done. Files for match"):
+                            "S4 Analysis copy", "analysis.mp4 640x360, 10 fps", "S6 Stage-out",
+                            "Done. Match", "Watch master.mp4 (full quality)"):
                 self.assertIn(heading, text)
             self.assertEqual(result.warnings, result.media_info.warnings)
 
@@ -108,17 +112,33 @@ class RunPipelineTest(unittest.TestCase):
             drive.add("F4")
             lines = []
             result = run.run_pipeline("1", config_path=drive.config_path, log=lines.append)
-            self.assertEqual(sorted(p.name for p in result.drive_dir.iterdir()),
-                             ["analysis.mp4", "master.mp4", "media_info.json"])
+            self.assertNotIn("analysis.wav", [p.name for p in result.drive_dir.iterdir()])
             self.assertEqual(len(result.warnings), 3)
             self.assertIn("WARNING: The master has no sound", "\n".join(lines))
 
-    def test_failure_raises_stage_error(self):
+    def test_failure_raises_stage_error_after_writing_the_report(self):
         with FakeDrive() as drive:
             drive.add("F9")
             with self.assertRaises(StageError) as ctx:
                 run.run_pipeline("F9.mp4", config_path=drive.config_path, log=lambda _: None)
             self.assertTrue(str(ctx.exception).startswith("S2 Probe failed:"))
-            self.assertFalse(drive.work.exists())
+            (match_dir,) = drive.work.iterdir()
+            report = RunReport.from_json((match_dir / "run_report.json").read_text())
+            self.assertEqual([(s.name, s.status) for s in report.stages],
+                             [("s0_preflight", "pass"), ("s1_stage_in", "pass"),
+                              ("s2_probe", "fail"), ("s6_stage_out", "pass")])
+            self.assertIn("Could not read F9.mp4", report.stages[2].errors[0])
+            self.assertIn("Result: FAILED at S2 Probe", (match_dir / "summary.txt").read_text())
+            self.assertFalse((match_dir / "media_info.json").exists())
+            self.assertFalse((match_dir / "stages").exists())
+
+    def test_notebook_from_another_release_is_refused(self):
+        for version in (None, "0.3.0"):
+            with self.subTest(version=version):
+                with self.assertRaises(StageError) as ctx:
+                    run.run_pipeline("1", notebook_version=version, log=lambda _: None)
+                message = str(ctx.exception)
+                self.assertTrue(message.startswith("Notebook check failed:"))
+                self.assertIn(f"blob/v{VERSION}/notebooks/run_pipeline.ipynb", message)
 
 

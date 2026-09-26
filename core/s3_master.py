@@ -80,6 +80,31 @@ def check_cfr(path: Path, fps: int) -> list[str]:
     return []
 
 
+def _describe(local_path: Path, drive_path: Path, fps: int, encode_seconds: float) -> Master:
+    out = ffmpeg.probe(local_path)
+    video = next(s for s in out["streams"] if s.get("codec_type") == "video")
+    has_audio = any(s.get("codec_type") == "audio" for s in out["streams"])
+    warnings = [] if has_audio else ["The master has no sound (the recording has no audio track)."]
+    return Master(local_path, drive_path, fps, int(video["width"]), int(video["height"]),
+                  float(out["format"]["duration"]), local_path.stat().st_size, has_audio,
+                  encode_seconds, warnings)
+
+
+def from_drive(pre: Preflight, stage_in: StageIn, info: MediaInfo,
+               progress: Progress = None) -> Master:
+    """The master made in an earlier run, copied back to local disk if it isn't there already."""
+    local_path = stage_in.local_dir / FILE_NAME
+    drive_path = pre.paths.work / stage_in.match_id / FILE_NAME
+    size = drive_path.stat().st_size
+    if not (local_path.is_file() and local_path.stat().st_size == size):
+        try:
+            files.copy_file(drive_path, local_path, expected_size=size, progress=progress)
+        except OSError as exc:
+            raise StageError(TITLE, [f"Could not copy the earlier {FILE_NAME} back from Drive: "
+                                     f"{exc.strerror or exc}. Re-run with force re-run ticked."]) from None
+    return _describe(local_path, drive_path, info.target_fps, 0.0)
+
+
 def run(pre: Preflight, stage_in: StageIn, probe: Probe, progress: Progress = None,
         copy_progress: Progress = None) -> Master:
     info = probe.media_info
@@ -112,10 +137,4 @@ def run(pre: Preflight, stage_in: StageIn, probe: Probe, progress: Progress = No
         raise StageError(TITLE, [f"Could not save {FILE_NAME} to Drive ({drive_path}): "
                                  f"{exc.strerror or exc}. Check Drive has space, then re-run."]) from None
 
-    out = ffmpeg.probe(local_path)
-    video = next(s for s in out["streams"] if s.get("codec_type") == "video")
-    has_audio = any(s.get("codec_type") == "audio" for s in out["streams"])
-    warnings = [] if has_audio else ["The master has no sound (the recording has no audio track)."]
-    return Master(local_path, drive_path, info.target_fps, int(video["width"]), int(video["height"]),
-                  float(out["format"]["duration"]), local_path.stat().st_size, has_audio,
-                  encode_seconds, warnings)
+    return _describe(local_path, drive_path, info.target_fps, encode_seconds)
