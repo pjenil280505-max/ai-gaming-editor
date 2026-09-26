@@ -1,0 +1,36 @@
+# Media never goes in the repo (CLAUDE.md rule 7, DEC-004)
+*.mp4
+*.m4v
+*.mov
+*.mkv
+*.webm
+*.avi
+*.flv
+*.3gp
+*.h264
+*.264
+*.h265
+*.hevc
+*.265
+*.wav
+*.aac
+*.m4a
+*.mp3
+*.flac
+*.ogg
+*.opus
+*.wma
+
+# Pipeline work dirs, if a run ever points inside the checkout
+/AIEditor/
+/work/
+/local_work/
+/aieditor_work/
+aieditor-fixtures-*/
+
+# Python / notebooks
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/

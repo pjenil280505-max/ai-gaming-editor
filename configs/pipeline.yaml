@@ -1,0 +1,32 @@
+# Phase 0 pipeline config — see docs/PHASE0.md §Config.
+# Every key is required and unknown keys are rejected, so a typo fails loudly
+# instead of silently falling back to a default.
+
+paths:
+  drive_root: /content/drive/MyDrive/AIEditor  # Google Drive folder as mounted on Colab
+  inbox: inbox                                 # relative paths live inside drive_root
+  work: work
+  local_work: /content/aieditor_work           # Colab local disk: fast, wiped on disconnect
+
+video:
+  target_fps: auto        # auto | 30 | 60 (auto snaps to 30 or 60 from the measured median frame rate)
+  master_codec: h264
+  master_crf: 18
+  master_preset: veryfast
+
+analysis:
+  width: 640              # aspect ratio kept
+  fps: 10
+  audio_rate: 16000
+  audio_channels: 1
+
+audio:
+  track_index: 0          # 0 = first audio track in the file
+  master_sample_rate: 48000
+
+qc:
+  duration_tolerance_s: 0.1
+  av_sync_tolerance_frames: 1
+
+loudness:
+  target_lufs: -14        # applied at render time only; Phase 0 only measures
