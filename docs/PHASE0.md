@@ -23,11 +23,13 @@ Config fingerprint = hash of the keys each stage actually uses. Path defaults: D
 
 `<YYYYMMDD-HHMM from file mtime>-<6 hex chars of hash(size + first 8 MB + last 8 MB)>`
 
+The time is the file's modified time in UTC; the exact hash layout is in DEC-014.
+
 ## Stages
 
-- **S0 Preflight:** ffmpeg/ffprobe present + versions; CPU count; GPU name; GPU encoder availability (record only); free local disk ≥ 3× input size; Drive mounted; config valid. Fail with a plain-English message.
+- **S0 Preflight:** ffmpeg/ffprobe present + versions; CPU count; GPU name; GPU encoder availability (record only); free local disk ≥ 3× input size; Drive mounted; config valid. Fail with a plain-English message. Details: DEC-017.
 - **S1 Stage-in:** compute match_id; copy raw file to local disk; verify size. On resume, copy finished outputs back from the Drive work dir instead of recomputing. Runs on every run (DEC-012): on resume it recomputes match_id and copies back from Drive only the files the first unfinished stage needs.
-- **S2 Probe:** write `media_info.json` — container, duration, size; video codec, width, height, rotation, display aspect (e.g. 20:9), r_frame_rate, avg_frame_rate, frame-duration stats (min/median/max/stdev from packet timestamps), is_vfr + evidence; every audio track (codec, rate, channels, start offset); chosen target_fps; chosen audio track; warnings. Fail if: no video stream, unreadable, or duration < 5 s. No audio → video-only mode + warning. More than one audio track → configured track + warning.
+- **S2 Probe:** write `media_info.json` — container, duration, size; video codec, width, height, rotation, display aspect (e.g. 20:9), r_frame_rate, avg_frame_rate, frame-duration stats (min/median/max/stdev from packet timestamps), is_vfr + evidence; every audio track (codec, rate, channels, start offset); chosen target_fps; chosen audio track; warnings. Fail if: no video stream, unreadable, or duration < 5 s. No audio → video-only mode + warning. More than one audio track → configured track + warning. Detection rules: DEC-016.
 - **S3 Master:** constant frame rate at target_fps; rotation applied to pixels and rotation metadata cleared; timestamps start at 0 with audio start offset corrected; audio resampled to 48 kHz AAC at ORIGINAL levels (no loudness normalisation — DEC-002). Re-probe output to confirm constant frame durations.
 - **S4 Analysis copy:** from master — video at width 640 (aspect kept), 10 fps; audio mono 16 kHz WAV; duration within one analysis frame of master.
 - **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame; black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied.
@@ -56,10 +58,10 @@ Field-level details (names, types, allowed values): DEC-007 and `schemas/*.json`
 
 ## Notebook (notebooks/run_pipeline.ipynb)
 
-- **C1** mount Drive + S0.
-- **C2** clone/pull a pinned tag using GITHUB_TOKEN from Colab Secrets.
+- **C1** mount Drive + S0. S0 actually runs in C4, because it needs the code from C2 and the recording chosen in C4 (DEC-013).
+- **C2** clone/pull a pinned tag using GITHUB_TOKEN from Colab Secrets. The token is optional while the repo is public (DEC-018); Claude pushes a tag after each merged increment (DEC-015).
 - **C3** install PyYAML if missing.
-- **C4** form: choose /inbox file, target_fps override, force re-run.
+- **C4** form: choose /inbox file, target_fps override, force re-run. In 0.2, running C4 runs S0 → S2 (DEC-013); C5 with live progress arrives in 0.3.
 - **C5** run with live progress %.
 - **C6** summary table + Drive paths.
 - **C7** self-test: run the unit tests on Colab's FFmpeg.

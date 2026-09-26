@@ -24,4 +24,4 @@ because PyYAML was already installed.
 Colab ships the same FFmpeg build, `6.1.1-3ubuntu5` (owner checked with
 `!ffmpeg -version | head -1` on 2026-09-26; DEC-009), so nothing needs
 installing there. The unit tests have not yet been run on Colab; notebook cell
-C7 (increment 0.2) does that.
+C7 (not built yet) will do that.

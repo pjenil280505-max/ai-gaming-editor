@@ -15,4 +15,4 @@ Owner works from Android only. Pipeline runs on Google Colab; storage is Google 
 11. Code must run on Google Colab (Ubuntu, Python 3.10+). No OS-specific paths.
 12. When the spec is ambiguous, ask; record the answer in DECISIONS.md.
 13. Any behaviour change updates the matching `docs/PHASE*.md` in the same PR.
-14. End every session with: files changed; test command + counts; what is untested; questions. Open a PR; never merge.
+14. End every session with: files changed; test command + counts; what is untested; questions. Open a PR; merge only when the owner explicitly says so (DEC-020).
