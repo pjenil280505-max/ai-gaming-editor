@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 import measure
-from core import s0_preflight, s1_stage_in, s2_probe, s3_master, s4_analysis
+from core import run, s0_preflight, s1_stage_in, s2_probe, s3_master, s4_analysis
 from core.errors import StageError
 from fake_drive import FakeDrive
 
@@ -114,6 +114,41 @@ class AnalysisOutputTest(unittest.TestCase):
         self.assertEqual(analysis.drive_video.read_bytes(), analysis.local_video.read_bytes())
         self.assertEqual(analysis.drive_audio.read_bytes(), analysis.local_audio.read_bytes())
         self.assertFalse(any(p.name.endswith(".partial") for p in drive_dir.iterdir()))
+
+    def test_progress_reaches_100_percent(self):
+        # the owner saw S4 stop at 90% on Colab (fixed in 0.5, DEC-029); a video-only master
+        # is the case where FFmpeg's own last report stops a frame short of the end
+        drive, pre, stage_in, master, _ = build("F4")
+        seen = []
+        s4_analysis.run(pre, stage_in, master, progress=seen.append)
+        self.assertEqual(seen, sorted(seen))
+        self.assertLess(max(seen[:-1]), 1.0)
+        self.assertEqual(seen[-1], 1.0)
+        lines = []
+        steps = run.Steps(lines.append, 10)
+        for fraction in seen:
+            steps(fraction)
+        self.assertEqual(lines[-1], "  100%")
+
+    def test_video_from_drive_reuses_or_copies_back(self):
+        drive, pre, stage_in, master, analysis = build("F7")
+        local = analysis.local_video
+        mtime = local.stat().st_mtime_ns
+        self.assertEqual(s4_analysis.video_from_drive(pre, stage_in), local)
+        self.assertEqual(local.stat().st_mtime_ns, mtime)              # same size: reused
+        local.unlink()                                                 # Colab disconnect
+        self.assertEqual(s4_analysis.video_from_drive(pre, stage_in), local)
+        self.assertEqual(local.read_bytes(), analysis.drive_video.read_bytes())
+
+    def test_video_from_drive_missing_is_plain_error(self):
+        drive = FakeDrive()
+        _drives.append(drive)
+        pre = s0_preflight.run(drive.add("F1"), None, drive.config_path)
+        stage_in = s1_stage_in.identify(pre)
+        with self.assertRaises(StageError) as ctx:
+            s4_analysis.video_from_drive(pre, stage_in)
+        self.assertIn("Could not copy the earlier analysis.mp4 back from Drive", str(ctx.exception))
+        self.assertIn("force re-run", str(ctx.exception))
 
     def test_too_short_output_fails_and_leaves_nothing(self):
         drive = FakeDrive()

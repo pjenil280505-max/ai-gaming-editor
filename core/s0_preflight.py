@@ -32,6 +32,7 @@ class Preflight:
     ffmpeg_version: str
     ffprobe_version: str
     cpu_count: int
+    cpu_model: Optional[str]
     gpu: Optional[str]
     gpu_encoder: bool       # recorded only (DEC-017)
     platform: str
@@ -50,6 +51,18 @@ def free_bytes(path: Path) -> int:
     while not path.exists() and path != path.parent:
         path = path.parent
     return shutil.disk_usage(path).free
+
+
+def cpu_model(cpuinfo: Path = Path("/proc/cpuinfo")) -> Optional[str]:
+    """CPU model name, e.g. 'Intel(R) Xeon(R) CPU @ 2.20GHz'; None when it can't be read (DEC-029)."""
+    try:
+        for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() == "model name" and value.strip():
+                return " ".join(value.split())
+    except OSError:
+        pass
+    return platform.processor().strip() or None
 
 
 def gpu_name() -> Optional[str]:
@@ -130,6 +143,6 @@ def run(source_name: str, overrides: Optional[dict[str, Any]] = None,
         config=config, paths=paths, source=source, source_size_bytes=size,
         free_disk_bytes=free, ffmpeg_version=versions["ffmpeg"],
         ffprobe_version=versions["ffprobe"], cpu_count=os.cpu_count() or 1,
-        gpu=gpu, gpu_encoder=gpu_encoder_works() if gpu else False,
+        cpu_model=cpu_model(), gpu=gpu, gpu_encoder=gpu_encoder_works() if gpu else False,
         platform=platform.platform(),
     )

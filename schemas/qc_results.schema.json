@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "qc_results",
+  "description": "S5 QC results for one match (docs/PHASE0.md S5); copied into run_report.json's qc on every run, including runs that skip S5. Generated from core/contracts.py by `python -m core.contracts`; do not edit by hand.",
+  "type": "object",
+  "properties": {
+    "checks": {
+      "description": "Every S5 check, in the order S5 runs them.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "description": "QC check name (DEC-028).",
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "description": "Check outcome.",
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ]
+          },
+          "value": {
+            "description": "Measured value (number, text, object, list of spans, or null); numbers are finite."
+          },
+          "threshold": {
+            "description": "Threshold the value was compared with, or null."
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "value",
+          "threshold"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "checks"
+  ],
+  "additionalProperties": false
+}

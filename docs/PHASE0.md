@@ -5,7 +5,7 @@ Objective: any Android recording → verified constant-frame-rate master + analy
 ## Drive layout
 
 - `/AIEditor/inbox` — raw uploads; never modified or deleted in Phase 0
-- `/AIEditor/work/<match_id>/` — `master.mp4`, `analysis.mp4`, `analysis.wav`, `media_info.json`, `stages/<stage>.done.json`, `run_report.json`, `summary.txt`, `logs/`
+- `/AIEditor/work/<match_id>/` — `master.mp4`, `analysis.mp4`, `analysis.wav`, `media_info.json`, `qc.json`, `stages/<stage>.done.json`, `run_report.json`, `summary.txt`, `logs/`
 - `/AIEditor/outputs`, `/labels`, `/assets` — later phases
 
 ## Config (configs/pipeline.yaml)
@@ -27,17 +27,17 @@ The time is the recording time written in the file name (`YYYY-MM-DD-HH-MM-SS`, 
 
 ## Stages
 
-- **S0 Preflight:** ffmpeg/ffprobe present + versions; CPU count; GPU name; GPU encoder availability (record only); free local disk ≥ 3× input size; Drive mounted; config valid. Fail with a plain-English message. Details: DEC-017.
+- **S0 Preflight:** ffmpeg/ffprobe present + versions; CPU count and model (DEC-029); GPU name; GPU encoder availability (record only); free local disk ≥ 3× input size; Drive mounted; config valid. Fail with a plain-English message. Details: DEC-017.
 - **S1 Stage-in:** compute match_id; copy raw file to local disk; verify size. On resume, copy finished outputs back from the Drive work dir instead of recomputing. Runs on every run (DEC-012): on resume it recomputes match_id and copies back from Drive only the files the first unfinished stage needs.
 - **S2 Probe:** write `media_info.json` — container, duration, size; video codec, width, height, rotation, display aspect (e.g. 20:9), r_frame_rate, avg_frame_rate, frame-duration stats (min/median/max/stdev from packet timestamps), is_vfr + evidence; every audio track (codec, rate, channels, start offset); chosen target_fps; chosen audio track; warnings. Fail if: no video stream, unreadable, or duration < 5 s. No audio → video-only mode + warning. More than one audio track → configured track + warning. Detection rules: DEC-016.
 - **S3 Master:** constant frame rate at target_fps; rotation applied to pixels and rotation metadata cleared; timestamps start at 0 with audio start offset corrected; audio resampled to 48 kHz AAC at ORIGINAL levels (no loudness normalisation — DEC-002). Re-probe output to confirm constant frame durations. Details: DEC-022.
 - **S4 Analysis copy:** from master — video at width 640 (aspect kept), 10 fps; audio mono 16 kHz WAV; duration within one analysis frame of master. Details: DEC-023.
-- **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame; black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied.
+- **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame (plus one AAC block of the recording, DEC-028); black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied. Results go to `qc.json` and into `run_report.json`; a failed check fails S5. Details: DEC-028.
 - **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S2–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run. Report details: DEC-026.
 
 ## Resume rule
 
-Skip a stage only if its marker exists AND input fingerprint, config fingerprint and code version match AND every listed output exists at its recorded size. Otherwise that stage and all later stages re-run. Markers are written only after outputs are complete.
+Skip a stage only if its marker exists AND input fingerprint, config fingerprint and code version match AND every listed output exists at its recorded size. Otherwise that stage and all later stages re-run. Markers are written only after outputs are complete, and a stage deletes its old marker before it starts (DEC-030).
 
 Exceptions — S0 Preflight, S1 Stage-in and S6 Stage-out:
 - run on every run and are never skipped;
@@ -54,15 +54,16 @@ Field-level details (names, types, allowed values): DEC-007 and `schemas/*.json`
 
 - **media_info.json** — fields as in S2.
 - **Stage marker** — stage, status, input_fingerprint, config_fingerprint, code_version (git SHA), outputs [{path, size_bytes}], started_at, finished_at.
-- **run_report.json** — run_id, match_id, code_version, config_fingerprint, environment {platform, cpu_count, gpu, ffmpeg_version}, stages [{name, status, started_at, finished_at, duration_s, skipped, warnings, errors}], qc [{check, status, value, threshold}], totals {footage_minutes, processing_minutes, minutes_per_footage_minute}.
+- **run_report.json** — run_id, match_id, code_version, config_fingerprint, environment {platform, cpu_count, cpu_model, gpu, ffmpeg_version}, stages [{name, status, started_at, finished_at, duration_s, skipped, warnings, errors}], qc [{check, status, value, threshold}], totals {footage_minutes, processing_minutes, minutes_per_footage_minute}.
+- **qc.json** — checks [{check, status, value, threshold}], written by S5 and copied into run_report.json's qc (DEC-028).
 
 ## Notebook (notebooks/run_pipeline.ipynb)
 
 - **C1** mount Drive + S0. S0 actually runs in C4, because it needs the code from C2 and the recording chosen in C4 (DEC-013).
 - **C2** clone/pull a pinned tag using GITHUB_TOKEN from Colab Secrets. The token is optional while the repo is public (DEC-018); Claude pushes a tag after each merged increment (DEC-015).
 - **C3** install PyYAML if missing.
-- **C4** form: choose /inbox file, target_fps override, force re-run. From 0.3 C4 only chooses; C5 runs the stages (DEC-024). Force re-run ignores every stage record (DEC-025).
-- **C5** run with live progress %. Runs S0 → S4 in 0.3 (DEC-024); from 0.4 skips finished stages, ends with the S6 report and refuses code from a different release (DEC-025–027).
+- **C4** form: choose /inbox file, target_fps override, force re-run. From 0.3 C4 only chooses; C5 runs the stages (DEC-024). Force re-run ignores every stage record (DEC-025). From 0.5 C4 and C5 say to use Runtime → Run all when a runtime reset has lost C2's code.
+- **C5** run with live progress %. Runs S0 → S4 in 0.3 (DEC-024); from 0.4 skips finished stages, ends with the S6 report and refuses code from a different release (DEC-025–027); from 0.5 runs S5 and prints its checks, and every progress bar ends at 100% (DEC-028, DEC-029).
 - **C6** summary table + Drive paths.
 - **C7** self-test: run the unit tests on Colab's FFmpeg.
 

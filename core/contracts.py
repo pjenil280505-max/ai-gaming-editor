@@ -235,6 +235,8 @@ class StageMarker(_Contract):
 class Environment:
     platform: str = _f("Platform string (e.g. from platform.platform()).", min_length=1)
     cpu_count: int = _f("Logical CPU count.", minimum=1)
+    cpu_model: Optional[str] = _f("CPU model name (e.g. from /proc/cpuinfo); null when it can't be "
+                                  "read (DEC-029).")
     gpu: Optional[str] = _f("GPU name; null when no GPU.")
     ffmpeg_version: str = _f("ffmpeg version string.", min_length=1)
 
@@ -253,9 +255,10 @@ class StageResult:
 
 @dataclass
 class QcCheck:
-    check: str = _f("QC check name.", min_length=1)
+    check: str = _f("QC check name (DEC-028).", min_length=1)
     status: str = _f("Check outcome.", enum=list(STATUSES))
-    value: Any = _f("Measured value (number, text, list of spans, or null).")
+    value: Any = _f("Measured value (number, text, object, list of spans, or null); "
+                    "numbers are finite.")
     threshold: Any = _f("Threshold the value was compared with, or null.")
 
 
@@ -299,7 +302,23 @@ class RunReport(_Contract):
         return problems
 
 
-CONTRACTS = (MediaInfo, StageMarker, RunReport)
+# --------------------------------------------------------------------------
+# qc.json (written by S5 QC, DEC-028)
+
+
+@dataclass
+class QcResults(_Contract):
+    checks: list[QcCheck] = _f("Every S5 check, in the order S5 runs them.")
+
+    CONTRACT_NAME = "qc_results"
+    CONTRACT_FILE = "qc_results.schema.json"
+    CONTRACT_DESCRIPTION = (
+        "S5 QC results for one match (docs/PHASE0.md S5); copied into run_report.json's qc "
+        "on every run, including runs that skip S5."
+    )
+
+
+CONTRACTS = (MediaInfo, StageMarker, RunReport, QcResults)
 
 
 # --------------------------------------------------------------------------
@@ -339,9 +358,26 @@ def _type_name(value: Any) -> str:
     return names.get(type(value), type(value).__name__)
 
 
+def _check_json_value(value: Any, path: str, problems: list[str]) -> None:
+    """Free-form values (QcCheck.value/threshold) must be plain JSON with finite numbers."""
+    if isinstance(value, float) and not math.isfinite(value):
+        problems.append(f"{path}: expected a finite number, got {value!r}")
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            _check_json_value(item, f"{path}[{i}]", problems)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                problems.append(f"{path}: object keys must be text, got {key!r}")
+            _check_json_value(item, f"{path}.{key}", problems)
+    elif not (value is None or isinstance(value, (bool, int, float, str))):
+        problems.append(f"{path}: expected a JSON value, got {_type_name(value)}")
+
+
 def _check_value(value: Any, tp: Any, rules: dict, path: str, problems: list[str]) -> None:
     tp, nullable = _unwrap_optional(tp)
     if tp is Any:
+        _check_json_value(value, path, problems)
         return
     if value is None:
         if not nullable:

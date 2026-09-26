@@ -36,6 +36,7 @@ class PreflightTest(unittest.TestCase):
         self.assertTrue(pre.ffmpeg_version.startswith("ffmpeg version 6."))
         self.assertTrue(pre.ffprobe_version.startswith("ffprobe version 6."))
         self.assertGreaterEqual(pre.cpu_count, 1)
+        self.assertEqual(pre.cpu_model, s0_preflight.cpu_model())
         self.assertGreater(pre.free_disk_bytes, 0)
         self.assertEqual(pre.paths.local_work, self.drive.local_work)
         self.assertTrue(pre.platform)
@@ -96,6 +97,21 @@ class PreflightTest(unittest.TestCase):
     def test_free_bytes_uses_nearest_existing_parent(self):
         missing = self.drive.local_work / "not" / "yet"
         self.assertGreater(s0_preflight.free_bytes(missing), 0)
+
+    def test_cpu_model(self):
+        # Colab's /proc/cpuinfo repeats one block per CPU; the first model name is used (DEC-029)
+        with tempfile.TemporaryDirectory() as tmp:
+            info = Path(tmp) / "cpuinfo"
+            info.write_text("processor\t: 0\nvendor_id\t: GenuineIntel\n"
+                            "model name\t: Intel(R) Xeon(R) CPU  @ 2.20GHz\n\n"
+                            "processor\t: 1\nmodel name\t: Other CPU\n")
+            self.assertEqual(s0_preflight.cpu_model(info), "Intel(R) Xeon(R) CPU @ 2.20GHz")
+            info.write_text("processor\t: 0\nCPU part\t: 0xd0c\n")          # ARM: no model name
+            with mock.patch("platform.processor", return_value="aarch64"):
+                self.assertEqual(s0_preflight.cpu_model(info), "aarch64")
+            with mock.patch("platform.processor", return_value=""):
+                self.assertIsNone(s0_preflight.cpu_model(info))
+                self.assertIsNone(s0_preflight.cpu_model(Path(tmp) / "missing"))
 
     def test_human_size(self):
         self.assertEqual(s0_preflight.human_size(999), "999 bytes")

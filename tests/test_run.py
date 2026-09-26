@@ -1,4 +1,4 @@
-"""core/run.py: inbox listing, choosing a recording, progress lines, S0 → S4 end to end."""
+"""core/run.py: inbox listing, choosing a recording, progress lines, S0 → S5 end to end."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ class RunPipelineTest(unittest.TestCase):
             self.assertEqual(result.drive_dir, drive.work / result.match_id)
             self.assertEqual(sorted(p.name for p in result.drive_dir.iterdir()),
                              ["analysis.mp4", "analysis.wav", "logs", "master.mp4", "media_info.json",
-                              "run_report.json", "stages", "summary.txt"])
+                              "qc.json", "run_report.json", "stages", "summary.txt"])
             self.assertEqual(result.skipped, [])
             self.assertEqual(result.media_info.target_fps, 60)
             self.assertEqual(result.master.fps, 60)
@@ -102,19 +102,26 @@ class RunPipelineTest(unittest.TestCase):
             for heading in ("S0 Preflight", "S1 Stage-in", "(time from file modified time",
                             "S2 Probe", "WARNING: Found 2 audio tracks", "S3 Master", "% · ",
                             "x real time (within the D1 limit of 1.5x)", "copied to Drive 100%",
-                            "S4 Analysis copy", "analysis.mp4 640x360, 10 fps", "S6 Stage-out",
+                            "S4 Analysis copy", "analysis.mp4 640x360, 10 fps", "S5 QC",
+                            "Constant frame rate    pass  every frame lasts 1/60 s",
+                            "Loudness               pass  ", "S6 Stage-out",
                             "Done. Match", "Watch master.mp4 (full quality)"):
                 self.assertIn(heading, text)
             self.assertEqual(result.warnings, result.media_info.warnings)
+            self.assertEqual({c.status for c in result.qc}, {"pass"})
+            # each progress bar ends at 100% (DEC-029): S1 copy, S3 encode, S4, S5
+            self.assertEqual(sum(1 for line in lines if line.startswith("  100%")), 4)
 
-    def test_video_only_warns_at_s3_and_s4(self):
+    def test_video_only_warns_at_s3_to_s5(self):
         with FakeDrive() as drive:
             drive.add("F4")
             lines = []
             result = run.run_pipeline("1", config_path=drive.config_path, log=lines.append)
             self.assertNotIn("analysis.wav", [p.name for p in result.drive_dir.iterdir()])
-            self.assertEqual(len(result.warnings), 3)
+            self.assertEqual(len(result.warnings), 5)
             self.assertIn("WARNING: The master has no sound", "\n".join(lines))
+            self.assertEqual({c.check: c.status for c in result.qc if c.status != "pass"},
+                             {"audio_vs_video_length": "warn", "loudness": "warn"})
 
     def test_failure_raises_stage_error_after_writing_the_report(self):
         with FakeDrive() as drive:

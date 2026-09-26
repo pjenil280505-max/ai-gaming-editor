@@ -19,13 +19,14 @@ from typing import Optional
 from core import files
 from core.config import stage_fingerprint
 from core.contracts import ContractError, OutputFile, StageMarker
+from core.errors import StageError
 
 MARKER_DIR = "stages"
 HASH_BYTES = 8 * 1024 * 1024
 REPO = Path(__file__).resolve().parent.parent
 
-# Stages built so far that follow the resume rule, in run order (S5 arrives in 0.5).
-RESUMABLE = ("s2_probe", "s3_master", "s4_analysis")
+# Stages that follow the resume rule, in run order.
+RESUMABLE = ("s2_probe", "s3_master", "s4_analysis", "s5_qc")
 
 STAGE_TITLES = {
     "s0_preflight": "S0 Preflight", "s1_stage_in": "S1 Stage-in", "s2_probe": "S2 Probe",
@@ -62,6 +63,9 @@ def input_files(stage: str, drive_dir: Path, source: Path) -> dict[str, Path]:
         "s2_probe": {"source": source},
         "s3_master": {"source": source, "media_info.json": drive_dir / "media_info.json"},
         "s4_analysis": {"master.mp4": drive_dir / "master.mp4"},
+        "s5_qc": {"media_info.json": drive_dir / "media_info.json",
+                  "master.mp4": drive_dir / "master.mp4",
+                  "analysis.mp4": drive_dir / "analysis.mp4"},
     }[stage]
 
 
@@ -77,6 +81,21 @@ def input_fingerprint(stage: str, drive_dir: Path, source: Path) -> Optional[str
 
 def marker_path(drive_dir: Path, stage: str) -> Path:
     return drive_dir / MARKER_DIR / f"{stage}.done.json"
+
+
+def clear_marker(drive_dir: Path, stage: str) -> None:
+    """Delete a stage's old marker before the stage runs again (DEC-030).
+
+    Until the new marker is written, a marker left from an earlier run could vouch
+    for outputs this run is replacing: qc.json or media_info.json can keep the same
+    size with different content.
+    """
+    try:
+        marker_path(drive_dir, stage).unlink(missing_ok=True)
+    except OSError as exc:
+        raise StageError(STAGE_TITLES[stage], [
+            f"Could not update the stage record on Drive ({drive_dir / MARKER_DIR}): "
+            f"{exc.strerror or exc}. Check Drive is mounted, then re-run."]) from None
 
 
 def write_marker(drive_dir: Path, stage: str, status: str, input_fp: str, config_fp: str,

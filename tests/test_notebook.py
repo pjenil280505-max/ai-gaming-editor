@@ -14,6 +14,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from core import run
 
@@ -176,6 +177,17 @@ class ExecuteCellsTest(unittest.TestCase):
             core.VERSION = real
         self.assertIn(f"C2 downloaded release 0.3.9. Set C2's tag to v{real}", out)
         self.assertIn("C2 downloaded release 0.3.0 or older", older)
+
+    def test_c4_c5_explain_a_reset_runtime(self):
+        # A reset runtime loses C2's code; the owner ran C5 alone and got ModuleNotFoundError
+        with mock.patch.dict(sys.modules, {"core": None}):
+            shared = {"__name__": "__cell__"}
+            c4 = self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'), shared)
+            c5 = self.exec_cell(cell("C5"), shared)
+            alone = self.exec_cell(cell("C5"))
+        for out in (c4, c5, alone):
+            self.assertIn("Python can't find 'core': the Colab runtime was reset", out)
+            self.assertIn("Use Runtime → Run all", out)
 
     def test_c5_needs_c4_then_reports_stage_error(self):
         self.assertIn("Choose a recording in cell C4 first", self.exec_cell(cell("C5")))
