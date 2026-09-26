@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "stage_marker",
+  "description": "Written after a stage's outputs are complete; drives the resume rule (docs/PHASE0.md). Generated from core/contracts.py by `python -m core.contracts`; do not edit by hand.",
+  "type": "object",
+  "properties": {
+    "stage": {
+      "description": "Stage id. S0, S1 and S6 run every time, so they never have a marker (DEC-010 to DEC-012).",
+      "type": "string",
+      "enum": [
+        "s2_probe",
+        "s3_master",
+        "s4_analysis",
+        "s5_qc"
+      ]
+    },
+    "status": {
+      "description": "Outcome of the completed stage (markers are written only after success).",
+      "type": "string",
+      "enum": [
+        "pass",
+        "warn"
+      ]
+    },
+    "input_fingerprint": {
+      "description": "SHA-256 (hex) of the stage's inputs.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "config_fingerprint": {
+      "description": "SHA-256 (hex) of the config keys this stage uses (core.config.stage_fingerprint).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "code_version": {
+      "description": "Git commit SHA of the pipeline code.",
+      "type": "string",
+      "minLength": 1
+    },
+    "outputs": {
+      "description": "Every file the stage produced.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Output path relative to the match work dir, '/'-separated.",
+            "type": "string",
+            "pattern": "^(?!/)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$)).+$"
+          },
+          "size_bytes": {
+            "description": "Size in bytes when the stage finished.",
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "path",
+          "size_bytes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "started_at": {
+      "description": "ISO 8601 timestamp with timezone.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "description": "ISO 8601 timestamp with timezone.",
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "stage",
+    "status",
+    "input_fingerprint",
+    "config_fingerprint",
+    "code_version",
+    "outputs",
+    "started_at",
+    "finished_at"
+  ],
+  "additionalProperties": false
+}
