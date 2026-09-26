@@ -60,6 +60,32 @@ class MatchIdTest(unittest.TestCase):
         self.assertNotEqual(s1_stage_in.match_id(self.make("big.mp4", bytes(data))), first)
         self.assertNotEqual(s1_stage_in.match_id(self.make("big.mp4", bytes(data) + b"\0")), first)
 
+    def test_recording_time_in_file_name_wins_over_mtime(self):
+        # the owner's recorder names files like this (clip 1, 2026-09-26)
+        name = "Record_2026-08-21-21-54-38_dacb6cb66c1ceaabd92782c8217a74fb.mp4"
+        path = self.make(name, b"x" * 1000)
+        mid, source = s1_stage_in.match_id_with_source(path)
+        self.assertEqual(mid, "20260821-2154-" + expected_id(path).rsplit("-", 1)[1])
+        self.assertEqual(source, s1_stage_in.FROM_NAME)
+        self.assertRegex(mid, contracts.MATCH_ID)
+
+    def test_no_or_invalid_time_in_name_falls_back_to_utc_mtime(self):
+        for name in ("a.mp4", "Record_2026-13-45-99-99-99_x.mp4", "x12026-08-21-21-54-381.mp4"):
+            with self.subTest(name=name):
+                path = self.make(name, b"x" * 1000)
+                mid, source = s1_stage_in.match_id_with_source(path)
+                self.assertEqual(mid, expected_id(path))
+                self.assertTrue(mid.startswith("20260925-2130-"))
+                self.assertEqual(source, s1_stage_in.FROM_MTIME)
+
+    def test_recording_time_parsing(self):
+        parse = s1_stage_in.recording_time
+        self.assertEqual(parse("Record_2026-08-21-21-54-38_x.mp4"), datetime(2026, 8, 21, 21, 54, 38))
+        self.assertIsNone(parse("Match 1.MP4"))
+        self.assertIsNone(parse("2026-08-21.mp4"))
+        self.assertEqual(parse("a_2026-02-30-10-00-00_b_2026-03-01-10-00-00.mp4"),
+                         datetime(2026, 3, 1, 10, 0, 0))     # first valid one
+
     def test_same_content_and_time_same_id(self):
         a = self.make("a.mp4", b"same bytes")
         b = self.make("b.mp4", b"same bytes")
@@ -81,6 +107,7 @@ class StageInTest(unittest.TestCase):
         result = s1_stage_in.run(self.pre, progress=seen.append)
         self.assertTrue(result.copied)
         self.assertEqual(result.match_id, expected_id(source))
+        self.assertEqual(result.time_source, s1_stage_in.FROM_MTIME)
         self.assertEqual(result.local_dir, self.drive.local_work / result.match_id)
         self.assertEqual(result.local_source.name, "source.mp4")
         self.assertEqual(result.local_source.read_bytes(), source.read_bytes())

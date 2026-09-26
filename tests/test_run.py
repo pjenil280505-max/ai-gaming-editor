@@ -62,7 +62,8 @@ class RunToProbeTest(unittest.TestCase):
             self.assertEqual(result.media_info.target_fps, 60)
             self.assertEqual(result.drive_media_info.parent.name, result.match_id)
             text = "\n".join(lines)
-            for heading in ("S0 Preflight", "S1 Stage-in", "100%", "S2 Probe", "WARNING: Found 2 audio tracks"):
+            for heading in ("S0 Preflight", "S1 Stage-in", "100%", "(time from file modified time",
+                            "S2 Probe", "WARNING: Found 2 audio tracks"):
                 self.assertIn(heading, text)
             self.assertEqual(result.warnings, result.media_info.warnings)
 

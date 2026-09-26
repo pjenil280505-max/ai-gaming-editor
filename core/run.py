@@ -114,7 +114,7 @@ def run_to_probe(choice: str, target_fps: str = "config", force: bool = False,
             log(f"  {step * 10}%")
 
     stage_in = s1_stage_in.run(pre, force=force, progress=progress)
-    log(f"  match_id {stage_in.match_id}; "
+    log(f"  match_id {stage_in.match_id} (time from {stage_in.time_source}); "
         f"{'copied and size verified' if stage_in.copied else 'reused existing local copy (same size)'}"
         f"  [{time.monotonic() - t1:.1f} s]")
 

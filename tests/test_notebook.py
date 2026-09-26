@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -76,8 +77,8 @@ def local_origin(tmp: Path) -> tuple[Path, Path, str]:
     git("commit", "-q", "-m", "one", cwd=origin)
     git("tag", "v-one", cwd=origin)
     clone = tmp / "clone"
-    source = (cell("C2")
-              .replace('tag = "v0.2.0"', 'tag = "v-one"')
+    source = re.sub(r'^tag = "[^"]*"', 'tag = "v-one"', cell("C2"), count=1, flags=re.M)
+    source = (source
               .replace('"https://github.com/pjenil280505-max/ai-gaming-editor.git"', repr(str(origin)))
               .replace('"/content/ai-gaming-editor"', repr(str(clone))))
     return origin, clone, source

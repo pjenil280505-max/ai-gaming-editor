@@ -23,7 +23,7 @@ Config fingerprint = hash of the keys each stage actually uses. Path defaults: D
 
 `<YYYYMMDD-HHMM from file mtime>-<6 hex chars of hash(size + first 8 MB + last 8 MB)>`
 
-The time is the file's modified time in UTC; the exact hash layout is in DEC-014.
+The time is the recording time written in the file name (`YYYY-MM-DD-HH-MM-SS`, the phone's local time) when there is one (DEC-021); otherwise the file's modified time in UTC. The exact hash layout is in DEC-014.
 
 ## Stages
 
