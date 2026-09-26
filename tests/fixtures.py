@@ -16,7 +16,6 @@ Stand-alone timing: python tests/fixtures.py [--slow]
 from __future__ import annotations
 
 import atexit
-import functools
 import os
 import shutil
 import subprocess
@@ -101,24 +100,11 @@ def slow_enabled() -> bool:
     return os.environ.get("RUN_SLOW") == "1"
 
 
-# ---- FFmpeg capability detection (Colab and the cloud box ship different versions)
-
-@functools.lru_cache(maxsize=None)
-def _ffmpeg_options() -> str:
-    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
-        raise FixtureError("ffmpeg/ffprobe not found on PATH; see docs/cloud-setup.md")
-    return subprocess.run(["ffmpeg", "-hide_banner", "-h", "full"],
-                          capture_output=True, text=True).stdout
-
-
-def _passthrough_timestamps() -> list[str]:
-    # -fps_mode replaced -vsync in FFmpeg 5.1
-    if "-fps_mode" in _ffmpeg_options():
-        return ["-fps_mode", "passthrough"]
-    return ["-vsync", "passthrough"]
-
+# FFmpeg 6.1.1 on both Colab and the cloud box (DEC-009); no fallbacks for older builds.
 
 def _run(cmd: list[str]) -> None:
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        raise FixtureError("ffmpeg/ffprobe not found on PATH; see docs/cloud-setup.md")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise FixtureError(f"command failed ({result.returncode}): {' '.join(cmd)}\n{result.stderr[-2000:]}")
@@ -174,7 +160,7 @@ def _encode(spec: Spec, out: Path) -> None:
         cmd += ["-map", f"{i}:a"]
     cmd += _video_codec_args(spec)
     if n > 1:
-        cmd += _passthrough_timestamps() + ["-enc_time_base:v", "1:90000"]
+        cmd += ["-fps_mode", "passthrough", "-enc_time_base:v", "1:90000"]
     if spec.tracks:
         cmd += ["-c:a", "aac", "-b:a", "128k"]
     cmd.append(str(out))
@@ -182,14 +168,9 @@ def _encode(spec: Spec, out: Path) -> None:
 
 
 def _set_rotation(src: Path, out: Path, degrees_cw: int) -> None:
-    if "-display_rotation" in _ffmpeg_options():
-        # FFmpeg >= 6: counter-clockwise angle; -90 == classic rotate=90 tag
-        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-               "-display_rotation", str(-degrees_cw), "-i", str(src), "-c", "copy", str(out)]
-    else:
-        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-               "-i", str(src), "-c", "copy", "-metadata:s:v:0", f"rotate={degrees_cw}", str(out)]
-    _run(cmd)
+    # -display_rotation takes a counter-clockwise angle; -90 == classic rotate=90 tag
+    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+          "-display_rotation", str(-degrees_cw), "-i", str(src), "-c", "copy", str(out)])
 
 
 def generate(name: str, directory: Path) -> Path:

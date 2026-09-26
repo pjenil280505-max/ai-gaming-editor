@@ -38,11 +38,11 @@ def streams(info: dict, codec_type: str) -> list[dict]:
 
 
 def rotation_cw(stream: dict) -> int:
-    """Clockwise display rotation from either the display matrix or the legacy tag."""
+    """Clockwise display rotation from the display matrix (0 when there is none)."""
     for side in stream.get("side_data_list", []):
         if "rotation" in side:
             return int(round(-float(side["rotation"]))) % 360
-    return int(stream.get("tags", {}).get("rotate", 0)) % 360
+    return 0
 
 
 def video_frame_durations(path: Path) -> list[float]:

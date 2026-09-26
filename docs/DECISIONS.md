@@ -4,6 +4,7 @@
 - **DEC-002** Master keeps original audio levels; loudness is measured in Phase 0 and applied only at render — normalising early would flatten the crowd-noise spikes Phase 4 depends on.
 - **DEC-003** Phase 0 uses only Python stdlib (unittest, dataclasses), PyYAML and FFmpeg, so tests run anywhere, including offline.
 - **DEC-004** No footage, audio or large binaries in the repo, ever.
+- **DEC-009** Target FFmpeg is 6.1.1 (Ubuntu build `6.1.1-3ubuntu5`) on both Colab and the Claude Code cloud box; owner checked Colab on 2026-09-26. Code and tests use FFmpeg 6 options (`-fps_mode`, `-display_rotation`) with no fallbacks for older builds. S0 (increment 0.2) will record the version on every run, so a Colab image change will show up in run_report.json.
 
 ## Proposed in increment 0.1 — awaiting owner approval
 
