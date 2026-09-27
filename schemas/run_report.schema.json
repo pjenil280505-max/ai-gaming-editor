@@ -38,6 +38,13 @@
           "type": "integer",
           "minimum": 1
         },
+        "cpu_model": {
+          "description": "CPU model name (e.g. from /proc/cpuinfo); null when it can't be read (DEC-029).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "gpu": {
           "description": "GPU name; null when no GPU.",
           "type": [
@@ -54,6 +61,7 @@
       "required": [
         "platform",
         "cpu_count",
+        "cpu_model",
         "gpu",
         "ffmpeg_version"
       ],
@@ -141,7 +149,7 @@
         "type": "object",
         "properties": {
           "check": {
-            "description": "QC check name.",
+            "description": "QC check name (DEC-028).",
             "type": "string",
             "minLength": 1
           },
@@ -155,7 +163,7 @@
             ]
           },
           "value": {
-            "description": "Measured value (number, text, list of spans, or null)."
+            "description": "Measured value (number, text, object, list of spans, or null); numbers are finite."
           },
           "threshold": {
             "description": "Threshold the value was compared with, or null."

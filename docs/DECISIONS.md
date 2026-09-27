@@ -28,5 +28,45 @@
 - **DEC-025** Resume details. Markers live on Drive at `work/<match_id>/stages/<stage>.done.json`, written after the stage's outputs are on Drive. Input fingerprints are SHA-256 over each input's size plus first and last 8 MiB, read from Drive: S2 the recording; S3 the recording + `media_info.json`; S4 `master.mp4`. Code version is the git commit of the checkout; if it can't be read nothing is skipped and markers say `unknown`. Any code release changes the commit, so upgrading mid-match re-runs every stage. The owner accepts this for Phase 0 (2026-09-26); per-stage versioning can be revisited if the number of matches makes it inefficient. An unreadable or invalid marker counts as missing. The plan is made right after S1 computes the match ID, before anything is copied: S1 copies the recording only when S2 or S3 will run, and when S3 is skipped but S4 runs, the earlier master is copied back from Drive. Force re-run ignores every marker and re-copies the recording (replaces DEC-017's 0.2 meaning). A failed stage writes no marker.
 - **DEC-026** Run report details. `run_report.json` and `summary.txt` describe the latest run and are overwritten each time; `logs/run-<run_id>.txt` (every line C5 printed) and the FFmpeg logs accumulate in `logs/`. `run_id` is the UTC start time `YYYYMMDDTHHMMSSZ`. A failure after the match ID is known still writes both files before the error is shown; a failure in S0 or before the match ID leaves no report, because there is no match folder yet. A skipped stage takes its status from its marker; a skipped S2 lists the recording's warnings. `qc` stays empty until S5 (0.5).
 - **DEC-027** Release check and watch hint (owner agreed, 2026-09-26, when starting 0.4). `core.VERSION`, C5's `NOTEBOOK_VERSION` and C2's default tag move together (a test enforces it). C5 stops if C2 downloaded code from another release; the code refuses a notebook that doesn't pass the matching release (every notebook before 0.4) and prints the link to the right one. C5's final message and `summary.txt` say to watch `master.mp4`, and that the analysis files are not for watching.
+- **DEC-028** S5 QC details.
+  - **Inputs and outputs:** S5 checks the local `master.mp4` and `analysis.mp4`. If S3 or S4 was skipped, they are first copied back from Drive (DEC-025).
+    - It saves `qc.json` to the Drive work dir: a new contract, `qc_results`, with the schema in `schemas/`. Its marker lists `qc.json`, and its input fingerprint covers `media_info.json`, `master.mp4` and `analysis.mp4`.
+    - `run_report.json`'s `qc` is copied from `qc.json` on every run, so a run that skips S5 still reports its checks. If `qc.json` can't be read, S5 runs again.
+  - **The six checks, in order:**
+    1. `constant_frame_rate` re-runs S3's frame check on the master. It fails unless every frame lasts 1/target_fps and no rotation metadata is left.
+    2. `length_vs_recording` is the master's duration minus the recording's `duration_s`, signed, in seconds. It fails if the size of that difference is over `qc.duration_tolerance_s`.
+    3. `audio_vs_video_length` is the master's sound end minus its picture end, signed, in seconds.
+       - **Limit:** `qc.av_sync_tolerance_frames` / target_fps, plus one AAC block (1024 samples at the recording's chosen-track rate: 21.3 ms at 48 kHz, 23.2 ms at 44.1 kHz).
+       - **Why the block:** the recording's last AAC block is decoded whole, so the master's sound can run up to one block past where the recording's sound really ends. The master's own AAC ends on the exact sample (its last packet holds 208 samples on the fixtures). Fixture gaps measured 4–15 ms. At 60 fps a limit of one frame alone (16.7 ms) would fail on this padding alone for roughly one recording in four or five. That is an estimate that assumes the recording's sound ends at a random point in its last block; it was not measured on real footage.
+       - **Over the limit is a warning, not a failure:** S3 keeps the recording's own stream ends (DEC-022), so a longer gap can come from the phone's recorder rather than the pipeline. The kick-sound spot check (A4) decides.
+       - **No sound:** warns, with value `null`.
+    4. `black_spans` uses FFmpeg blackdetect on `analysis.mp4`: a pixel counts as black at ≤ 0.10 brightness, a picture when ≥ 98 % of its pixels are black.
+    5. `frozen_spans` uses FFmpeg freezedetect (−60 dB) on `analysis.mp4`.
+       - Both 4 and 5 list spans of 2 s or more (FFmpeg's default) as `{start_s, end_s}`.
+       - A span that reaches the end ends at the video's end.
+       - A black span is also a frozen span.
+       - Any span warns (for the owner to look at); none passes.
+    6. `loudness` runs ebur128, with true peak on, over the master's sound. It records integrated LUFS, true peak (dBTP) and loudness range (LU).
+       - The values are stored, not applied (DEC-002), and the check passes.
+       - Silence has no peak: the value is `null`, because JSON can't hold −inf.
+       - No sound warns, with value `null`.
+  - **When a check fails:** S5 fails. It writes no marker, and the run ends FAILED at S5 QC. `qc.json` and the report still hold every check.
+  - **Contract rule:** QC values must be plain JSON with finite numbers.
+  - **To revisit after 0.5's 3 clips:**
+    - whether normal eFootball screens (half-time, menus) trigger black or frozen warnings;
+    - whether the audio-vs-video gaps on real recordings stay inside the limit.
+- **DEC-029** CPU model and 100 % progress (owner, 2026-09-26, approving the two 0.5 changes).
+  - **CPU model:** the run report records the Colab CPU model, so S3 speed can be compared across Colab machines (clip 1 measured 1.31x and 2.09x).
+    - Source: `environment.cpu_model` is the first `model name` in `/proc/cpuinfo`; failing that, `platform.processor()`; failing that, `null`.
+    - S0 prints it and `summary.txt` shows it.
+    - Contract change: a new required, nullable field in `run_report`'s `environment`.
+  - **Progress to 100 %:** FFmpeg's last reported `out_time` can fall a frame short of the end, and with 10 % steps anything short of the end shows 90 %. This is the likely reason S4 stopped at 90 % on Colab. The shortfall happens when nothing runs past the picture's end; on the fixtures the sound does, so they reached 100 % anyway.
+    - Once FFmpeg succeeds, progress is set to 100 %; a failed FFmpeg run never shows 100 %.
+    - This also affects S3's and S5's progress lines.
+  - S3's encoding settings are unchanged: the owner deferred the D1 decision to 0.6.
+- **DEC-030** A stage (S2–S5) deletes its own old marker before it starts. The owner chose this for all four stages, not S5 only (2026-09-27).
+  - **Why:** a marker vouches that the outputs on Drive belong to it. While a stage rewrites those outputs, the old marker could vouch for new content of the same size (`qc.json`, or `media_info.json`, whose size doesn't change when target_fps flips between 30 and 60). A failure or disconnect would then leave that mismatched pair behind.
+  - **Cost:** a stage that starts and then fails runs again next time, even if the settings are put back.
+  - This extends DEC-025's "a failed stage writes no marker" to "a failed stage leaves no marker".
 
-DEC-005 to DEC-008 were proposed in increment 0.1 and approved by the owner on 2026-09-26. DEC-014's hash layout and DEC-016 to DEC-018 were proposed in increment 0.2 and approved, and DEC-019 acknowledged, by the owner on 2026-09-26. DEC-022 and DEC-023 were proposed in increment 0.3 and approved by the owner on 2026-09-26. DEC-025 and DEC-026 were proposed in increment 0.4 and approved by the owner on 2026-09-26.
+DEC-005 to DEC-008 were proposed in increment 0.1 and approved by the owner on 2026-09-26. DEC-014's hash layout and DEC-016 to DEC-018 were proposed in increment 0.2 and approved, and DEC-019 acknowledged, by the owner on 2026-09-26. DEC-022 and DEC-023 were proposed in increment 0.3 and approved by the owner on 2026-09-26. DEC-025 and DEC-026 were proposed in increment 0.4 and approved by the owner on 2026-09-26. DEC-028 and DEC-030 were proposed in increment 0.5 and approved by the owner on 2026-09-27 (DEC-030 for all of S2–S5).

@@ -171,10 +171,18 @@ class MasterOutputTest(unittest.TestCase):
         s3_master.run(pre, stage_in, probe, progress=seen.append)
         self.assertTrue(seen)
         self.assertEqual(seen, sorted(seen))
-        self.assertGreaterEqual(seen[-1], 0.95)
+        self.assertEqual(seen[-1], 1.0)                 # DEC-029
 
 
 class MasterFailureTest(unittest.TestCase):
+
+    def test_failed_encode_never_reports_the_end(self):
+        drive, pre, stage_in, probe = stages_before_s3("F1")
+        stage_in.local_source.write_bytes(b"not a video")
+        seen = []
+        with self.assertRaises(StageError):
+            s3_master.run(pre, stage_in, probe, progress=seen.append)
+        self.assertNotIn(1.0, seen)
 
     def test_ffmpeg_failure_is_plain_english_and_leaves_nothing(self):
         drive, pre, stage_in, probe = stages_before_s3("F1")

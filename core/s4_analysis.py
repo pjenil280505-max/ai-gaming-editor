@@ -53,6 +53,20 @@ def _duration(path: Path) -> float:
     return float(ffmpeg.probe(path)["format"]["duration"])
 
 
+def video_from_drive(pre: Preflight, stage_in: StageIn, progress: Progress = None) -> Path:
+    """analysis.mp4 from an earlier run on local disk (for S5), copied back unless already there."""
+    local_path = stage_in.local_dir / VIDEO_NAME
+    drive_path = pre.paths.work / stage_in.match_id / VIDEO_NAME
+    try:
+        size = drive_path.stat().st_size
+        if not (local_path.is_file() and local_path.stat().st_size == size):
+            files.copy_file(drive_path, local_path, expected_size=size, progress=progress)
+    except OSError as exc:
+        raise StageError(TITLE, [f"Could not copy the earlier {VIDEO_NAME} back from Drive: "
+                                 f"{exc.strerror or exc}. Re-run with force re-run ticked."]) from None
+    return local_path
+
+
 def run(pre: Preflight, stage_in: StageIn, master: Master, progress: Progress = None) -> Analysis:
     config = pre.config
     frame_s = 1 / get(config, "analysis.fps")

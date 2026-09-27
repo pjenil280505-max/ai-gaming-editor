@@ -58,7 +58,9 @@ def run_with_progress(cmd: list[str], duration_s: float,
     """Run an ffmpeg command, reporting the fraction of `duration_s` done so far.
 
     Adds `-progress pipe:1 -nostats`; stderr goes to `log_path` (or is discarded
-    unread), so a chatty ffmpeg can never block on a full pipe.
+    unread), so a chatty ffmpeg can never block on a full pipe. Reports 1.0 once
+    ffmpeg succeeds: its last `out_time` can fall a frame short of the end, so
+    progress would otherwise stop at the last step below 100% (DEC-029).
     """
     if not available(cmd[0]):
         raise ToolError(f"{cmd[0]} is not installed")
@@ -79,3 +81,5 @@ def run_with_progress(cmd: list[str], duration_s: float,
         if log_path and log_path.exists():
             lines = [x for x in log_path.read_text(errors="replace").splitlines() if x.strip()]
         raise ToolError(lines[-1] if lines else f"{cmd[0]} exited with code {code}")
+    if progress:
+        progress(1.0)

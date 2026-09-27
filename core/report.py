@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from core import files
+from core import files, s5_qc
 from core.config import config_fingerprint
-from core.contracts import (STAGES, Environment, MediaInfo, RunReport, StageResult, Totals)
+from core.contracts import (STAGES, Environment, MediaInfo, QcCheck, RunReport, StageResult, Totals)
 from core.errors import StageError
 from core.resume import STAGE_TITLES
 from core.s0_preflight import Preflight
@@ -50,6 +50,7 @@ class RunLog:
         self._log = log
         self.lines: list[str] = []
         self.records: list[StageRecord] = []
+        self.qc: list[QcCheck] = []       # S5's checks, run now or loaded from qc.json
         self.started = now()
 
     def __call__(self, line: str) -> None:
@@ -85,7 +86,8 @@ def build_report(run: RunLog, run_id: str, match_id: str, version: Optional[str]
     return RunReport(
         run_id=run_id, match_id=match_id, code_version=version or "unknown",
         config_fingerprint=config_fingerprint(pre.config),
-        environment=Environment(platform=pre.platform, cpu_count=pre.cpu_count, gpu=pre.gpu,
+        environment=Environment(platform=pre.platform, cpu_count=pre.cpu_count,
+                                cpu_model=pre.cpu_model, gpu=pre.gpu,
                                 ffmpeg_version=pre.ffmpeg_version),
         stages=[StageResult(name=r.name, status=r.status,
                             started_at=r.started_at.isoformat(timespec="seconds"),
@@ -93,7 +95,7 @@ def build_report(run: RunLog, run_id: str, match_id: str, version: Optional[str]
                             duration_s=round((r.finished_at - r.started_at).total_seconds(), 3),
                             skipped=r.skipped, warnings=r.warnings, errors=r.errors)
                 for r in records],
-        qc=[],                                   # S5 QC arrives in 0.5
+        qc=list(run.qc),
         totals=Totals(footage_minutes=round(footage, 3), processing_minutes=round(processing, 3),
                       minutes_per_footage_minute=round(processing / footage, 3) if footage else None),
     )
@@ -111,6 +113,8 @@ def summary_text(report: RunReport, run: RunLog, pre: Preflight,
         f"Recording: {pre.source.name}"
         + (f" ({clock(media_info.duration_s)})" if media_info else ""),
         f"Result: {result}",
+        f"Colab machine: {pre.cpu_count} CPUs, {pre.cpu_model or 'CPU model unknown'}; "
+        f"GPU {pre.gpu or 'none'}",
         "",
         "Stages:",
     ]
@@ -118,6 +122,8 @@ def summary_text(report: RunReport, run: RunLog, pre: Preflight,
         state = "skipped" if s.skipped else s.status
         lines.append(f"  {STAGE_TITLES[s.name]:<17} {state:<8} {clock(s.duration_s):>6}"
                      + (f"  {notes[s.name]}" if notes.get(s.name) else ""))
+    if report.qc:
+        lines += ["", "QC checks:"] + s5_qc.lines(report.qc)
     problems = [(s.name, w) for s in report.stages for w in s.warnings + s.errors]
     if problems:
         lines += ["", "Warnings and errors:"]

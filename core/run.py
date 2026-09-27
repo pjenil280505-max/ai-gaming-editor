@@ -13,9 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from core import VERSION, report, resume, s0_preflight, s1_stage_in, s2_probe, s3_master, s4_analysis
+from core import (VERSION, report, resume, s0_preflight, s1_stage_in, s2_probe, s3_master,
+                  s4_analysis, s5_qc)
 from core.config import ConfigError, get, load_config, resolve_paths, stage_fingerprint
-from core.contracts import ContractError, MediaInfo
+from core.contracts import ContractError, MediaInfo, QcCheck
 from core.errors import StageError
 from core.report import RunLog, now
 from core.resume import STAGE_TITLES
@@ -37,8 +38,9 @@ class Result:
     match_id: str
     media_info: MediaInfo
     drive_dir: Path
-    master: Optional[Master]            # None when S3 and S4 were both skipped
+    master: Optional[Master]            # None when S3, S4 and S5 were all skipped
     analysis: Optional[Analysis]        # None when S4 was skipped
+    qc: list[QcCheck]                   # S5's checks (from qc.json when S5 was skipped)
     skipped: list[str]                  # stages skipped by the resume rule
     warnings: list[str]
     report_path: Path
@@ -173,7 +175,7 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
                  config_path: Optional[Path] = None,
                  log: Callable[[str], None] = log_default,
                  notebook_version: Optional[str] = VERSION) -> Result:
-    """S0 → S4 (+ S6 report) for one inbox recording, skipping stages already done.
+    """S0 → S5 (+ S6 report) for one inbox recording, skipping stages already done.
 
     Raises StageError with a plain-English message; once the match is known, a
     failure still writes run_report.json and summary.txt before it is raised.
@@ -185,7 +187,8 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
     started = now()
     run(f"S0 Preflight: checking Colab, Drive and '{name}' ...")
     pre = s0_preflight.run(name, overrides_for(target_fps), config_path)
-    run(f"  {pre.ffmpeg_version}; {pre.cpu_count} CPUs; GPU: {pre.gpu or 'none'}"
+    run(f"  {pre.ffmpeg_version}; {pre.cpu_count} CPUs ({pre.cpu_model or 'model unknown'}); "
+        f"GPU: {pre.gpu or 'none'}"
         f" (GPU encoder {'works' if pre.gpu_encoder else 'not available'}); "
         f"{human_size(pre.free_disk_bytes)} free on local disk")
     run.done("s0_preflight", started)
@@ -223,6 +226,7 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
         current, started = "s2_probe", now()
         if plan.runs("s2_probe"):
             input_fp = resume.input_fingerprint("s2_probe", drive_dir, pre.source)
+            resume.clear_marker(drive_dir, "s2_probe")
             run("S2 Probe: measuring the recording ...")
             probe = s2_probe.run(pre, stage_in)
             media_info = probe.media_info
@@ -249,6 +253,7 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
         current, started = "s3_master", now()
         if plan.runs("s3_master"):
             input_fp = resume.input_fingerprint("s3_master", drive_dir, pre.source)
+            resume.clear_marker(drive_dir, "s3_master")
             run(f"S3 Master: encoding {clock(media_info.duration_s)} at {media_info.target_fps} fps "
                 f"(the slow step; progress every 5%) ...")
             master = s3_master.run(pre, stage_in, probe,
@@ -277,6 +282,7 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
         current, started = "s4_analysis", now()
         if plan.runs("s4_analysis"):
             input_fp = resume.input_fingerprint("s4_analysis", drive_dir, pre.source)
+            resume.clear_marker(drive_dir, "s4_analysis")
             t = time.monotonic()
             run("S4 Analysis copy: making the small video and WAV ...")
             analysis = s4_analysis.run(pre, stage_in, master, progress=Steps(run, 10))
@@ -294,6 +300,43 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
         else:
             run("S4 Analysis copy: skipped (done in an earlier run)")
             run.skipped("s4_analysis", plan.markers["s4_analysis"].status, "done in an earlier run")
+
+        current, started = "s5_qc", now()
+        earlier = None if plan.runs("s5_qc") else s5_qc.load(drive_dir)
+        if earlier is None:
+            if not plan.runs("s5_qc"):
+                run(f"S5 QC: {s5_qc.FILE_NAME} from the earlier run can't be read, so S5 runs again")
+            input_fp = resume.input_fingerprint("s5_qc", drive_dir, pre.source)
+            resume.clear_marker(drive_dir, "s5_qc")
+            t = time.monotonic()
+            run("S5 QC: checking the master and the analysis copy ...")
+            if master is None:
+                run("  copying the earlier master back from Drive for S5 ...")
+                master = s3_master.from_drive(pre, stage_in, media_info, progress=Steps(run, 25))
+            if analysis is None:
+                run("  copying the earlier analysis.mp4 back from Drive for S5 ...")
+                analysis_video = s4_analysis.video_from_drive(pre, stage_in, progress=Steps(run, 25))
+            else:
+                analysis_video = analysis.local_video
+            qc = s5_qc.run(pre, stage_in, media_info, master.local_path, analysis_video,
+                           progress=Steps(run, 25))
+            run.qc = qc.checks
+            for line in s5_qc.lines(qc.checks):
+                run(line)
+            run(f"  saved {qc.drive_path}  [{time.monotonic() - t:.1f} s]")
+            if qc.failures:
+                raise StageError(s5_qc.TITLE, qc.failures)
+            resume.write_marker(drive_dir, "s5_qc", _status(qc.warnings), input_fp,
+                                stage_fingerprint(pre.config, "s5_qc"), version,
+                                [qc.drive_path], started, now())
+            run.done("s5_qc", started, qc.warnings)
+        else:
+            run.qc = earlier
+            run("S5 QC: skipped (done in an earlier run); its results:")
+            for line in s5_qc.lines(earlier):
+                run(line)
+            run.skipped("s5_qc", plan.markers["s5_qc"].status, "done in an earlier run",
+                        s5_qc.outcome(earlier)[0])
     except StageError as err:
         run.failed(current, started, err.problems)
         run(str(err))
@@ -308,10 +351,10 @@ def run_pipeline(choice: str, target_fps: str = "config", force: bool = False,
     run("S6 Stage-out: writing the run report ...")
     report_path, summary_path = report.write(run, run_id, stage_in.match_id, version, pre,
                                              media_info, stage_in.local_dir, drive_dir)
-    skipped = [s for s, reason in plan.reasons.items() if reason is None]
+    skipped = [r.name for r in run.records if r.skipped]
     warnings = [w for r in run.records for w in r.warnings]
     run(f"\nDone. Match {stage_in.match_id} is in {drive_dir}")
     run(f"  {report.WATCH_HINT}")
     run(f"  Run summary: {summary_path.name}; details: {report_path.name}")
-    return Result(stage_in.match_id, media_info, drive_dir, master, analysis, skipped, warnings,
-                  report_path, summary_path)
+    return Result(stage_in.match_id, media_info, drive_dir, master, analysis, run.qc, skipped,
+                  warnings, report_path, summary_path)

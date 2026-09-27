@@ -9,7 +9,7 @@ import re
 import unittest
 
 from core import contracts
-from core.contracts import ContractError, MediaInfo, RunReport, StageMarker
+from core.contracts import ContractError, MediaInfo, QcResults, RunReport, StageMarker
 
 FP = "a" * 64
 
@@ -55,7 +55,8 @@ def run_report() -> dict:
         "match_id": "20260925-2130-a1b2c3",
         "code_version": "e20c7d0",
         "config_fingerprint": FP,
-        "environment": {"platform": "Linux-6.1-x86_64", "cpu_count": 2, "gpu": None,
+        "environment": {"platform": "Linux-6.1-x86_64", "cpu_count": 2,
+                        "cpu_model": "Intel(R) Xeon(R) CPU @ 2.20GHz", "gpu": None,
                         "ffmpeg_version": "4.4.2"},
         "stages": [
             {"name": "s1_stage_in", "status": "pass", "started_at": "2026-09-26T14:00:00+00:00",
@@ -75,7 +76,18 @@ def run_report() -> dict:
     }
 
 
-EXAMPLES = [(MediaInfo, media_info), (StageMarker, stage_marker), (RunReport, run_report)]
+def qc_results() -> dict:
+    return {"checks": [
+        {"check": "audio_vs_video_length", "status": "pass", "value": 0.015, "threshold": 0.0399},
+        {"check": "frozen_spans", "status": "warn", "value": [{"start_s": 6.0, "end_s": 9.0}],
+         "threshold": 2.0},
+        {"check": "loudness", "status": "pass",
+         "value": {"integrated_lufs": -23.0, "true_peak_dbtp": None, "lra_lu": 0.0}, "threshold": None},
+    ]}
+
+
+EXAMPLES = [(MediaInfo, media_info), (StageMarker, stage_marker), (RunReport, run_report),
+            (QcResults, qc_results)]
 
 
 class RoundTripTest(unittest.TestCase):
@@ -117,6 +129,7 @@ class RoundTripTest(unittest.TestCase):
         self.assertEqual(MediaInfo.from_dict(data).audio_track_index, None)
         data = run_report()
         data["totals"]["minutes_per_footage_minute"] = None
+        data["environment"]["cpu_model"] = None        # /proc/cpuinfo unreadable (DEC-029)
         self.assertEqual(RunReport.from_dict(data).validate(), [])
 
 
@@ -188,6 +201,21 @@ class ValidationTest(unittest.TestCase):
             "stages[1].finished_at: '2026-09-26T14:11:00' is not an ISO 8601 timestamp with timezone",
             "qc[0].check: must not be empty",
         ])
+
+    def test_qc_values_are_plain_json_with_finite_numbers(self):
+        # ebur128 reports a true peak of -inf for silence; JSON can't hold it (DEC-028)
+        data = qc_results()
+        data["checks"][2]["value"]["true_peak_dbtp"] = -math.inf
+        data["checks"][1]["value"][0]["end_s"] = math.nan
+        data["checks"][0]["threshold"] = (1, 2)
+        self.assertProblems(QcResults, data, [
+            "checks[2].value.true_peak_dbtp: expected a finite number, got -inf",
+            "checks[1].value[0].end_s: expected a finite number, got nan",
+            "checks[0].threshold: expected a JSON value, got tuple",
+        ])
+        obj = QcResults.from_dict(qc_results())
+        obj.checks[0].value = math.inf
+        self.assertEqual(obj.validate(), ["checks[0].value: expected a finite number, got inf"])
 
     def test_unexpected_fields_reported(self):
         data = media_info()
