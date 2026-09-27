@@ -161,9 +161,10 @@ def validate_config(data: Any) -> list[str]:
     return problems
 
 
-def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> dict:
-    """Read and validate a pipeline YAML file; raise ConfigError listing every problem."""
-    path = Path(path)
+def load_config(path: Optional[Path | str] = None) -> dict:
+    """Read and validate a pipeline YAML file (default: configs/pipeline.yaml); raise
+    ConfigError listing every problem."""
+    path = Path(path if path is not None else DEFAULT_CONFIG_PATH)
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:

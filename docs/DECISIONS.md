@@ -79,5 +79,19 @@
     - **No sound:** still warns.
   - **`black_spans` and `frozen_spans` are information only.** They always pass and still list every span of 2 s or more. Normal game screens produce them on every match, and telling a recorder fault from a menu needs game knowledge, which belongs in `games/efootball/` in a later phase.
   - **A4** in PHASE0 is reworded to match: the master keeps the recording's sound/picture alignment within one frame plus one AAC block, plus the owner's kick-sound spot check.
+- **DEC-032 (proposed)** Increment 0.6 and notebook cells C6/C7.
+  - **Why now:** PHASE0 lists C6 and C7 but assigned them to no increment, and the Definition of Done needs C7 (unit tests pass on Colab). So 0.6 builds them.
+  - **Two steps:**
+    1. Release 0.6.0 adds C6 and C7.
+    2. After the owner's three full matches and a C7 run on Colab, a second PR adds `docs/reports/phase0.md` (A7).
+  - **C6** reads Drive only. It shows two tables:
+    - every match folder's latest run: length, result, and QC counts, from `run_report.json`;
+    - every S3 encode in every match's `logs/run-*.txt`: date, match, length, speed, and machine (CPU count and model; "not recorded" before 0.5).
+    - The report is overwritten each run and a skipped S3 records no speed, which is why encodes come from the logs. C6 also counts how many encodes went over D1's 1.5x.
+  - **C7** runs `python -m unittest discover -s tests -v` in a separate Python process at the checked-out tag.
+    - `RUN_SLOW` is removed, so F10 stays off.
+    - It prints progress and one result line; on failure it prints every failure in full.
+    - It runs only when its `run_self_test` box is ticked, because it takes minutes and **Run all** would otherwise start it every time.
+  - **Tests fixed for a mounted Drive:** two notebook tests assumed Google Drive is not mounted, so they would fail on Colab. They now point the default config at a folder that doesn't exist; `load_config()` reads `DEFAULT_CONFIG_PATH` when called, so a test can do that.
 
-DEC-005 to DEC-008 were proposed in increment 0.1 and approved by the owner on 2026-09-26. DEC-014's hash layout and DEC-016 to DEC-018 were proposed in increment 0.2 and approved, and DEC-019 acknowledged, by the owner on 2026-09-26. DEC-022 and DEC-023 were proposed in increment 0.3 and approved by the owner on 2026-09-26. DEC-025 and DEC-026 were proposed in increment 0.4 and approved by the owner on 2026-09-26. DEC-028 and DEC-030 were proposed in increment 0.5 and approved by the owner on 2026-09-27 (DEC-030 for all of S2–S5). DEC-031 was approved by the owner on 2026-09-27 before increment 0.5.1 was built.
+DEC-005 to DEC-008 were proposed in increment 0.1 and approved by the owner on 2026-09-26. DEC-014's hash layout and DEC-016 to DEC-018 were proposed in increment 0.2 and approved, and DEC-019 acknowledged, by the owner on 2026-09-26. DEC-022 and DEC-023 were proposed in increment 0.3 and approved by the owner on 2026-09-26. DEC-025 and DEC-026 were proposed in increment 0.4 and approved by the owner on 2026-09-26. DEC-028 and DEC-030 were proposed in increment 0.5 and approved by the owner on 2026-09-27 (DEC-030 for all of S2–S5). DEC-031 was approved by the owner on 2026-09-27 before increment 0.5.1 was built. DEC-032 is proposed in increment 0.6.

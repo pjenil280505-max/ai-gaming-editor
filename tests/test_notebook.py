@@ -1,4 +1,4 @@
-"""notebooks/run_pipeline.ipynb: structure, and cells C2–C5 executed outside Colab."""
+"""notebooks/run_pipeline.ipynb: structure, and cells C2–C7 executed outside Colab."""
 
 from __future__ import annotations
 
@@ -16,7 +16,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from core import run
+import yaml
+
+from core import config, run, selftest
 
 REPO = Path(__file__).resolve().parent.parent
 NOTEBOOK = REPO / "notebooks" / "run_pipeline.ipynb"
@@ -63,6 +65,23 @@ def fake_colab(token="tok-123"):
         sys.modules.update(saved_modules)
 
 
+@contextlib.contextmanager
+def no_drive():
+    """Point the default config at a Drive folder that doesn't exist.
+
+    C7 runs these tests on Colab, where the owner's Drive is mounted; without this
+    the cells would list the real inbox and the tests would depend on it.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        data = config.load_config()
+        data["paths"]["drive_root"] = str(Path(tmp) / "not-mounted" / "AIEditor")
+        data["paths"]["local_work"] = str(Path(tmp) / "local")
+        path = Path(tmp) / "pipeline.yaml"
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        with mock.patch.object(config, "DEFAULT_CONFIG_PATH", path):
+            yield
+
+
 def git(*args, cwd=None):
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd,
                    check=True, capture_output=True)
@@ -87,10 +106,10 @@ def local_origin(tmp: Path) -> tuple[Path, Path, str]:
 
 class StructureTest(unittest.TestCase):
 
-    def test_cells_c1_to_c5_in_order_and_valid_python(self):
+    def test_cells_c1_to_c7_in_order_and_valid_python(self):
         titles = [c.splitlines()[0] for c in cells()]
         self.assertEqual([t.split(" · ")[0] for t in titles],
-                         ["#@title C1", "#@title C2", "#@title C3", "#@title C4", "#@title C5"])
+                         [f"#@title C{i}" for i in range(1, 8)])
         for source in cells():
             ast.parse(source)
 
@@ -106,6 +125,9 @@ class StructureTest(unittest.TestCase):
         for source, name in ((c4, "inbox_listing"), (c4, "describe_choice"), (c5, "run_pipeline")):
             self.assertIn(f"run.{name}(", source)
             self.assertTrue(callable(getattr(run, name)))
+        self.assertIn("overview.text()", cell("C6"))
+        self.assertIn("selftest.run()", cell("C7"))
+        self.assertIn("run_self_test = False", cell("C7"))     # never runs on Run all by default
 
 
     def test_release_numbers_agree(self):
@@ -159,10 +181,17 @@ class ExecuteCellsTest(unittest.TestCase):
     def test_c3_reports_installed_pyyaml(self):
         self.assertIn("already installed", self.exec_cell(cell("C3")))
 
+    def test_no_drive_redirects_the_default_config(self):
+        # the cell tests below rely on this; on Colab the real Drive is mounted
+        with no_drive():
+            root = config.resolve_paths(config.load_config()).drive_root
+        self.assertEqual(root.parent.name, "not-mounted")
+        self.assertFalse(root.exists())
+
     def test_c4_lists_inbox_or_explains_choice(self):
-        # Outside Colab the default config's Drive paths do not exist.
-        self.assertIn("not found", self.exec_cell(cell("C4")))
-        out = self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'))
+        with no_drive():
+            self.assertIn("not found", self.exec_cell(cell("C4")))
+            out = self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'))
         self.assertIn("'clip.mp4' is not a recording in the inbox", out)
 
     def test_c5_refuses_code_from_another_release(self):
@@ -192,10 +221,31 @@ class ExecuteCellsTest(unittest.TestCase):
     def test_c5_needs_c4_then_reports_stage_error(self):
         self.assertIn("Choose a recording in cell C4 first", self.exec_cell(cell("C5")))
         shared = {"__name__": "__cell__"}
-        self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'), shared)
-        out = self.exec_cell(cell("C5"), shared)
+        with no_drive():
+            self.exec_cell(cell("C4").replace('recording = ""', 'recording = "clip.mp4"'), shared)
+            out = self.exec_cell(cell("C5"), shared)
         self.assertIn("S0 Preflight failed:", out)
         self.assertIn("Run cell C1", out)
+
+    def test_c6_prints_the_overview(self):
+        with no_drive():
+            out = self.exec_cell(cell("C6"))
+        self.assertIn("Work folder", out)
+        self.assertIn("not found. Run cell C1", out)
+
+    def test_c7_runs_the_tests_only_when_ticked(self):
+        calls = []
+        with mock.patch.object(selftest, "run", lambda: calls.append("run")):
+            out = self.exec_cell(cell("C7"))
+            self.assertEqual(calls, [])
+            self.assertIn("Tick run_self_test", out)
+            self.exec_cell(cell("C7").replace("run_self_test = False", "run_self_test = True"))
+        self.assertEqual(calls, ["run"])
+
+    def test_c6_c7_explain_a_reset_runtime(self):
+        with mock.patch.dict(sys.modules, {"core": None}):
+            for name in ("C6", "C7"):
+                self.assertIn("the Colab runtime was reset", self.exec_cell(cell(name)))
 
 
 if __name__ == "__main__":

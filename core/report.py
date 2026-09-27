@@ -101,18 +101,22 @@ def build_report(run: RunLog, run_id: str, match_id: str, version: Optional[str]
     )
 
 
+def result(report: RunReport) -> str:
+    """PASS, WARN or FAILED at <stage>: the run's outcome in summary.txt and C6."""
+    failed = [s for s in report.stages if s.status == "fail"]
+    if failed:
+        return f"FAILED at {STAGE_TITLES[failed[0].name]}"
+    return "WARN" if any(s.status == "warn" for s in report.stages) else "PASS"
+
+
 def summary_text(report: RunReport, run: RunLog, pre: Preflight,
                  media_info: Optional[MediaInfo]) -> str:
-    failed = [s for s in report.stages if s.status == "fail"]
-    warned = any(s.status == "warn" for s in report.stages)
-    result = (f"FAILED at {STAGE_TITLES[failed[0].name]}" if failed
-              else "WARN" if warned else "PASS")
     notes = {r.name: r.note for r in run.records}
     lines = [
         f"Match {report.match_id} · run {report.run_id} · code {report.code_version[:7]}",
         f"Recording: {pre.source.name}"
         + (f" ({clock(media_info.duration_s)})" if media_info else ""),
-        f"Result: {result}",
+        f"Result: {result(report)}",
         f"Colab machine: {pre.cpu_count} CPUs, {pre.cpu_model or 'CPU model unknown'}; "
         f"GPU {pre.gpu or 'none'}",
         "",

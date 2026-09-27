@@ -64,8 +64,8 @@ Field-level details (names, types, allowed values): DEC-007 and `schemas/*.json`
 - **C3** install PyYAML if missing.
 - **C4** form: choose /inbox file, target_fps override, force re-run. From 0.3 C4 only chooses; C5 runs the stages (DEC-024). Force re-run ignores every stage record (DEC-025). From 0.5 C4 and C5 say to use Runtime → Run all when a runtime reset has lost C2's code.
 - **C5** run with live progress %. Runs S0 → S4 in 0.3 (DEC-024); from 0.4 skips finished stages, ends with the S6 report and refuses code from a different release (DEC-025–027); from 0.5 runs S5 and prints its checks, and every progress bar ends at 100% (DEC-028, DEC-029).
-- **C6** summary table + Drive paths.
-- **C7** self-test: run the unit tests on Colab's FFmpeg.
+- **C6** summary table + Drive paths. From 0.6: every match's latest result and QC counts, and every S3 encode from the run logs with its speed and machine (DEC-032).
+- **C7** self-test: run the unit tests on Colab's FFmpeg. From 0.6: runs only when its box is ticked, because it takes minutes (DEC-032).
 
 ## Test fixtures
 
@@ -112,7 +112,7 @@ Generated at test time, never committed; each has a white flash + 1 kHz beep eve
 - **0.3** S3–S4 (owner watches clip 1 master)
 - **0.4** resume logic + run report (owner does disconnect test)
 - **0.5** S5 QC (owner runs 3 clips)
-- **0.6** 3 full matches + Phase 0 report → Phase 0 done
+- **0.6** 3 full matches + Phase 0 report → Phase 0 done. Built in two steps (DEC-032): release 0.6.0 adds C6 and C7; the report follows the owner's runs.
 
 ## Decisions to settle by measurement
 
