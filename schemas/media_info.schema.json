@@ -148,6 +148,13 @@
           "start_offset_s": {
             "description": "Audio stream start time minus video stream start time, seconds.",
             "type": "number"
+          },
+          "end_offset_s": {
+            "description": "Audio stream end minus video stream end, seconds (negative = the sound ends first); null when the file doesn't record a stream's length (DEC-031).",
+            "type": [
+              "number",
+              "null"
+            ]
           }
         },
         "required": [
@@ -155,7 +162,8 @@
           "codec",
           "sample_rate",
           "channels",
-          "start_offset_s"
+          "start_offset_s",
+          "end_offset_s"
         ],
         "additionalProperties": false
       }

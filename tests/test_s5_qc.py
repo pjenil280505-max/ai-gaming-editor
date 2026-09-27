@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -159,32 +161,50 @@ class RulesTest(unittest.TestCase):
         self.assertIn("shorter", s5_qc.describe(s5_qc.check_length(19.95, 20.0, 0.1)))
         self.assertIn("same length", s5_qc.describe(s5_qc.check_length(20.0, 20.0, 0.1)))
 
-    def test_audio_vs_video_allows_one_frame_plus_one_audio_block(self):
+    def test_audio_vs_video_compares_the_master_with_the_recording(self):
+        # Clip 1 on Colab: the phone's sound ended 60.3 ms early, the master's 59.7 ms (DEC-031)
+        check = s5_qc.check_audio_vs_video
+        clip1 = check(streams(700.816667, 700.757), 60, 1, 48000, -0.060345)
+        self.assertEqual((clip1.status, clip1.threshold), ("pass", 0.038))
+        self.assertEqual(clip1.value, {"recording_s": -0.06, "master_s": -0.06, "change_s": 0.001})
+        self.assertEqual(s5_qc.describe(clip1),
+                         "sound ends 60 ms before the picture in the recording and 60 ms before "
+                         "in the master: moved 1 ms (limit 38 ms)")
+
+    def test_allowed_move_is_one_frame_plus_one_audio_block(self):
         # 60 fps, 48 kHz recording: 16.7 ms frame + 21.3 ms AAC block = 38.0 ms (DEC-028)
         check = s5_qc.check_audio_vs_video
-        self.assertEqual(check(streams(20.0, 20.021), 60, 1, 48000).status, "pass")   # padding only
-        self.assertEqual(check(streams(20.0, 20.038), 60, 1, 48000).status, "pass")
-        self.assertEqual(check(streams(20.0, 20.039), 60, 1, 48000).status, "warn")
-        self.assertEqual(check(streams(20.0, 19.961), 60, 1, 48000).status, "warn")   # ends early
-        self.assertEqual(check(streams(20.0, 20.056), 30, 1, 44100).status, "pass")   # 33.3 + 23.2 ms
-        self.assertEqual(check(streams(20.0, 20.021), 60, 0, 48000).status, "pass")   # block only
-        result = check(streams(20.0, 20.1), 60, 1, 48000)
-        self.assertEqual((result.value, result.threshold), (0.1, 0.038))
-        self.assertEqual(s5_qc.describe(result), "sound ends 100 ms after the picture (limit 38 ms)")
-        self.assertIn("before", s5_qc.describe(check(streams(20.0, 19.9), 60, 1, 48000)))
+        self.assertEqual(check(streams(20.0, 20.038), 60, 1, 48000, 0.0).status, "pass")
+        self.assertEqual(check(streams(20.0, 20.039), 60, 1, 48000, 0.0).status, "fail")
+        self.assertEqual(check(streams(20.0, 19.961), 60, 1, 48000, 0.0).status, "fail")  # sound lost
+        self.assertEqual(check(streams(20.0, 19.9), 60, 1, 48000, -0.1).status, "pass")   # phone's own
+        self.assertEqual(check(streams(20.0, 20.056), 30, 1, 44100, 0.0).status, "pass")  # 33.3 + 23.2
+        self.assertEqual(check(streams(20.0, 20.021), 60, 0, 48000, 0.0).status, "pass")  # block only
+        moved = check(streams(20.0, 20.1), 60, 1, 48000, 0.0)
+        self.assertEqual(s5_qc.describe(moved), "sound ends 0 ms after the picture in the recording "
+                                                "and 100 ms after in the master: moved 100 ms (limit 38 ms)")
+
+    def test_unknown_recording_ends_warn_instead_of_guessing(self):
+        result = s5_qc.check_audio_vs_video(streams(20.0, 19.94), 60, 1, 48000, None)
+        self.assertEqual((result.status, result.value["master_s"], result.value["change_s"]),
+                         ("warn", -0.06, None))
+        self.assertIn("can't be compared", s5_qc.describe(result))
 
     def test_no_sound_warns_instead_of_guessing(self):
-        for result in (s5_qc.check_audio_vs_video(streams(20.0, None), 30, 1, None),
+        for result in (s5_qc.check_audio_vs_video(streams(20.0, None), 30, 1, None, None),
                        s5_qc.check_loudness(None)):
             self.assertEqual((result.status, result.value, result.threshold), ("warn", None, None))
             self.assertIn("no sound", s5_qc.describe(result))
 
-    def test_spans_warn_and_are_listed_for_the_owner(self):
+    def test_spans_are_information_only(self):
+        # all three real clips had loading/menu spans, so a warning would fire on every match (DEC-031)
         self.assertEqual(s5_qc.check_spans("black_spans", []).status, "pass")
         spans = [{"start_s": 61.0, "end_s": 64.5}, {"start_s": 600.0, "end_s": 602.0}]
         result = s5_qc.check_spans("frozen_spans", spans)
-        self.assertEqual((result.status, result.threshold), ("warn", 2.0))
-        self.assertEqual(s5_qc.describe(result), "1:01–1:04 (3.5 s), 10:00–10:02 (2.0 s)")
+        self.assertEqual((result.status, result.value, result.threshold), ("pass", spans, 2.0))
+        self.assertEqual(s5_qc.describe(result), "2 of 2 s or longer, listed for later phases: "
+                                                 "1:01–1:04 (3.5 s), 10:00–10:02 (2.0 s)")
+        self.assertEqual(s5_qc.outcome([result]), ([], []))
 
     def test_outcome_lines(self):
         checks = [s5_qc.check_length(20.25, 20.0, 0.1), s5_qc.check_loudness(None),
@@ -228,10 +248,12 @@ class StageTest(unittest.TestCase):
 
     def test_measured_values_on_f1(self):
         checks = by_name(run_s5("F1"))
-        # F1's recording ends its last AAC block 15 ms after the picture (DEC-022)
-        self.assertAlmostEqual(checks["audio_vs_video_length"].value, 0.015, delta=0.002)
-        self.assertAlmostEqual(checks["audio_vs_video_length"].threshold, 1 / 30 + 1024 / 44100,
-                               places=4)
+        # F1's sound and picture end together; decoding its last AAC block whole adds 15 ms (DEC-022)
+        av = checks["audio_vs_video_length"]
+        self.assertEqual(av.value["recording_s"], 0.0)
+        self.assertAlmostEqual(av.value["master_s"], 0.015, delta=0.002)
+        self.assertAlmostEqual(av.value["change_s"], 0.015, delta=0.002)
+        self.assertAlmostEqual(av.threshold, 1 / 30 + 1024 / 44100, places=4)
         self.assertAlmostEqual(checks["length_vs_recording"].value, 0.015, delta=0.002)
         self.assertEqual(checks["length_vs_recording"].threshold, 0.1)
         self.assertEqual(set(checks["loudness"].value), {"integrated_lufs", "true_peak_dbtp", "lra_lu"})
@@ -249,6 +271,34 @@ class StageTest(unittest.TestCase):
                          {"audio_vs_video_length": "warn", "loudness": "warn"})
         self.assertEqual(len(qc.warnings), 2)
         self.assertFalse((stage_in.local_dir / "logs" / s5_qc.LOUDNESS_LOG).exists())
+
+    def test_phone_that_stops_its_sound_early_passes(self):
+        # clip 1's situation at 60 fps, exaggerated to 100 ms; S5 in 0.5.0 warned on this
+        drive = FakeDrive({"video.target_fps": 60})
+        _drives.append(drive)
+        fixtures.generate("short", drive.inbox, replace(fixtures.SPECS["F1"], audio_short_s=0.1))
+        pre = s0_preflight.run("short.mp4", None, drive.config_path)
+        stage_in = s1_stage_in.run(pre)
+        probe = s2_probe.run(pre, stage_in)
+        master = s3_master.run(pre, stage_in, probe)
+        analysis = s4_analysis.run(pre, stage_in, master)
+        qc = s5_qc.run(pre, stage_in, probe.media_info, master.local_path, analysis.local_video)
+        av = by_name(qc)["audio_vs_video_length"]
+        self.assertEqual(av.status, "pass")
+        self.assertAlmostEqual(av.value["recording_s"], -0.1, delta=0.002)
+        self.assertGreater(abs(av.value["master_s"]), av.threshold)     # the 0.5.0 rule's warning
+        self.assertLessEqual(abs(av.value["change_s"]), av.threshold)
+        self.assertEqual((qc.warnings, qc.failures), ([], []))
+
+    def test_pipeline_moving_the_sound_fails(self):
+        drive, pre, stage_in, probe, master, analysis = build("F1")
+        info = copy.deepcopy(probe.media_info)
+        info.audio_tracks[0].end_offset_s = -0.2        # as if S3 had added 200 ms of sound
+        qc = s5_qc.run(pre, stage_in, info, master.local_path, analysis.local_video)
+        self.assertEqual(by_name(qc)["audio_vs_video_length"].status, "fail")
+        self.assertEqual(len(qc.failures), 1)
+        self.assertTrue(qc.failures[0].startswith("Audio vs video length: sound ends 200 ms before"))
+        self.assertTrue(qc.failures[0].endswith("Send this message."))
 
     def test_failed_check_is_returned_and_saved_not_raised(self):
         qc = run_s5("F1", qc__duration_tolerance_s=0.001)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 
@@ -109,6 +110,30 @@ class ProbeFixturesTest(unittest.TestCase):
         self.assertGreaterEqual(offset, 0.5 - 2048 / 44100)   # AAC priming (see test_fixtures F7)
         self.assertLessEqual(offset, 0.5)
         self.assertTrue(any(w.startswith("Audio starts 0.4") for w in info.warnings))
+
+    def test_end_offset_is_where_the_sound_ends_against_the_picture(self):
+        # DEC-031: clip 1's phone stopped its sound 60 ms before the picture
+        self.assertEqual(measure("F1").audio_tracks[0].end_offset_s, 0.0)
+        self.assertAlmostEqual(measure("F7").audio_tracks[0].end_offset_s, 0.0, delta=0.002)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = fixtures.generate("short", Path(tmp), replace(SPECS["F1"], audio_short_s=0.06))
+            info = s2_probe.measure(path, config(), "short.mp4")
+        self.assertAlmostEqual(info.audio_tracks[0].end_offset_s, -0.06, delta=0.002)
+        self.assertEqual(info.warnings, [])            # information for S5, not a warning
+
+    def test_end_offset_is_null_when_the_file_records_no_stream_lengths(self):
+        # Matroska keeps stream lengths only in tags, so ffprobe reports none
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "clip.mkv"
+            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                            "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=6",
+                            "-f", "lavfi", "-i", "sine=d=6", "-c:v", "libx264", "-c:a", "aac",
+                            str(path)], check=True)
+            info = s2_probe.measure(path, config(), "clip.mkv")
+        self.assertIsNone(info.audio_tracks[0].end_offset_s)
+        self.assertEqual(info.validate(), [])
+        self.assertEqual(s2_probe._end({"start_time": "0.5", "duration": "2"}), 2.5)
+        self.assertIsNone(s2_probe._end({"start_time": "0.5"}))
 
     def test_U10_every_media_info_validates_and_round_trips(self):
         for name in ("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"):

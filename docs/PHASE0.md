@@ -29,10 +29,10 @@ The time is the recording time written in the file name (`YYYY-MM-DD-HH-MM-SS`, 
 
 - **S0 Preflight:** ffmpeg/ffprobe present + versions; CPU count and model (DEC-029); GPU name; GPU encoder availability (record only); free local disk ≥ 3× input size; Drive mounted; config valid. Fail with a plain-English message. Details: DEC-017.
 - **S1 Stage-in:** compute match_id; copy raw file to local disk; verify size. On resume, copy finished outputs back from the Drive work dir instead of recomputing. Runs on every run (DEC-012): on resume it recomputes match_id and copies back from Drive only the files the first unfinished stage needs.
-- **S2 Probe:** write `media_info.json` — container, duration, size; video codec, width, height, rotation, display aspect (e.g. 20:9), r_frame_rate, avg_frame_rate, frame-duration stats (min/median/max/stdev from packet timestamps), is_vfr + evidence; every audio track (codec, rate, channels, start offset); chosen target_fps; chosen audio track; warnings. Fail if: no video stream, unreadable, or duration < 5 s. No audio → video-only mode + warning. More than one audio track → configured track + warning. Detection rules: DEC-016.
+- **S2 Probe:** write `media_info.json` — container, duration, size; video codec, width, height, rotation, display aspect (e.g. 20:9), r_frame_rate, avg_frame_rate, frame-duration stats (min/median/max/stdev from packet timestamps), is_vfr + evidence; every audio track (codec, rate, channels, start offset, end offset against the video — DEC-031); chosen target_fps; chosen audio track; warnings. Fail if: no video stream, unreadable, or duration < 5 s. No audio → video-only mode + warning. More than one audio track → configured track + warning. Detection rules: DEC-016.
 - **S3 Master:** constant frame rate at target_fps; rotation applied to pixels and rotation metadata cleared; timestamps start at 0 with audio start offset corrected; audio resampled to 48 kHz AAC at ORIGINAL levels (no loudness normalisation — DEC-002). Re-probe output to confirm constant frame durations. Details: DEC-022.
 - **S4 Analysis copy:** from master — video at width 640 (aspect kept), 10 fps; audio mono 16 kHz WAV; duration within one analysis frame of master. Details: DEC-023.
-- **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; master audio vs video duration ≤ 1 frame (plus one AAC block of the recording, DEC-028); black and frozen spans listed (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied. Results go to `qc.json` and into `run_report.json`; a failed check fails S5. Details: DEC-028.
+- **S5 QC v0** (each pass/warn/fail): CFR confirmed on master; |master − source| duration ≤ 0.1 s; the master's sound-vs-picture end offset matches the recording's own within 1 frame (plus one AAC block of the recording; DEC-028, DEC-031); black and frozen spans listed for later phases, information only (scanned on analysis copy); loudness measured (integrated LUFS, true peak, LRA) and stored, not applied. Results go to `qc.json` and into `run_report.json`; a failed check fails S5. Details: DEC-028, DEC-031.
 - **S6 Stage-out:** after every stage, copy its outputs + marker to the Drive work dir; at the end write `run_report.json` + `summary.txt`. Split (DEC-011): the per-stage copy belongs to each of S2–S5 and is skipped with that stage; the stage copies its outputs first and its marker last. Writing `run_report.json` + `summary.txt` runs on every run, because they describe the current run. Report details: DEC-026.
 
 ## Resume rule
@@ -100,7 +100,7 @@ Generated at test time, never committed; each has a white flash + 1 kHz beep eve
 - **A1** 3 full matches end-to-end from Android.
 - **A2** constant frame rate confirmed.
 - **A3** duration within ±0.1 s.
-- **A4** audio/video lengths within 1 frame + owner spot-checks 3 kick sounds.
+- **A4** the master keeps the recording's sound/picture alignment: its audio-vs-video end offset matches the recording's within 1 frame + one AAC block (DEC-031), + owner spot-checks 3 kick sounds.
 - **A5** deliberate disconnect during S3 → re-run skips S2 and restarts S3.
 - **A6** processing speed recorded.
 - **A7** report saved to `docs/reports/phase0.md`.

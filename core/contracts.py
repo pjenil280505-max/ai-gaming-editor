@@ -150,6 +150,10 @@ class AudioTrack:
     sample_rate: int = _f("Sample rate in Hz.", minimum=1)
     channels: int = _f("Channel count.", minimum=1)
     start_offset_s: float = _f("Audio stream start time minus video stream start time, seconds.")
+    end_offset_s: Optional[float] = _f(
+        "Audio stream end minus video stream end, seconds (negative = the sound ends first); "
+        "null when the file doesn't record a stream's length (DEC-031)."
+    )
 
 
 @dataclass

@@ -56,6 +56,7 @@ class Spec:
     vcodec: str = "h264"
     tracks: tuple[Track, ...] = (Track(),)
     audio_offset_s: float = 0.0     # audio starts this long after video
+    audio_short_s: float = 0.0      # audio ends this long before video (phones do, DEC-031)
     rotation_cw: int = 0            # classic 'rotate' tag convention
     truncated: bool = False
     slow: bool = False
@@ -153,7 +154,8 @@ def _encode(spec: Spec, out: Path) -> None:
         if spec.audio_offset_s:
             cmd += ["-itsoffset", str(spec.audio_offset_s)]
         cmd += ["-f", "lavfi", "-i",
-                _audio_source(track, spec.audio_offset_s, spec.duration_s - spec.audio_offset_s)]
+                _audio_source(track, spec.audio_offset_s,
+                              spec.duration_s - spec.audio_offset_s - spec.audio_short_s)]
 
     cmd += ["-map", video_label]
     for i in range(len(spec.tracks)):

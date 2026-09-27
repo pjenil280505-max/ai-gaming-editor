@@ -1,4 +1,4 @@
-"""S5 QC v0 (docs/PHASE0.md): checks the master and the analysis copy. Details in DEC-028.
+"""S5 QC v0 (docs/PHASE0.md): checks the master and the analysis copy. Details in DEC-028/031.
 
 Six checks, each pass / warn / fail. The results are saved to Drive as qc.json
 and copied into run_report.json on every run, including runs that skip S5.
@@ -74,25 +74,33 @@ def _stream_end(stream: dict) -> float:
 
 
 def check_audio_vs_video(streams: list[dict], fps: int, tolerance_frames: float,
-                         recording_rate: Optional[int]) -> QcCheck:
-    """Audio end minus video end; allowed: the configured frames plus one audio block.
+                         recording_rate: Optional[int],
+                         recording_offset_s: Optional[float]) -> QcCheck:
+    """How much the pipeline moved the sound's end against the picture's end (DEC-031).
 
-    The recording's last audio block is decoded whole, so the master's sound can
-    run up to one block (21–23 ms) past the recording's real end; at 60 fps that
-    alone is more than a frame (DEC-022, DEC-028).
+    Phones stop their sound and picture tracks tens of ms apart (clip 1: sound
+    60 ms early), and S3 keeps that, so the master is compared with the
+    recording's own offset. Allowed change: the configured frames plus one audio
+    block, because the recording's last block is decoded whole (DEC-028).
     """
     video = next(s for s in streams if s.get("codec_type") == "video")
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
     if audio is None or not recording_rate:
         return QcCheck("audio_vs_video_length", "warn", None, None)
-    diff = _stream_end(audio) - _stream_end(video)
-    allowed = tolerance_frames / fps + AUDIO_BLOCK_SAMPLES / recording_rate
-    return QcCheck("audio_vs_video_length", "pass" if abs(diff) <= allowed + 1e-6 else "warn",
-                   round(diff, 3), round(allowed, 4))
+    master = _stream_end(audio) - _stream_end(video)
+    allowed = round(tolerance_frames / fps + AUDIO_BLOCK_SAMPLES / recording_rate, 4)
+    if recording_offset_s is None:
+        return QcCheck("audio_vs_video_length", "warn",
+                       {"recording_s": None, "master_s": round(master, 3), "change_s": None}, allowed)
+    change = master - recording_offset_s
+    return QcCheck("audio_vs_video_length", "pass" if abs(change) <= allowed + 1e-6 else "fail",
+                   {"recording_s": round(recording_offset_s, 3), "master_s": round(master, 3),
+                    "change_s": round(change, 3)}, allowed)
 
 
 def check_spans(name: str, spans: list[dict]) -> QcCheck:
-    return QcCheck(name, "warn" if spans else "pass", spans, SPAN_MIN_S)
+    """Information only: normal game screens (loading, menus) make these on every match (DEC-031)."""
+    return QcCheck(name, "pass", spans, SPAN_MIN_S)
 
 
 def check_loudness(measured: Optional[dict]) -> QcCheck:
@@ -175,6 +183,10 @@ def _clock(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def _ends(offset_s: float) -> str:
+    return f"{abs(offset_s) * 1000:.0f} ms {'after' if offset_s >= 0 else 'before'}"
+
+
 def describe(check: QcCheck) -> str:
     """One plain-English line for a check (summary.txt and C5's output)."""
     v, t = check.value, check.threshold
@@ -188,13 +200,18 @@ def describe(check: QcCheck) -> str:
     if check.check == "audio_vs_video_length":
         if v is None:
             return "no sound, so this can't be checked"
-        return (f"sound ends {abs(v) * 1000:.0f} ms {'after' if v >= 0 else 'before'} the "
-                f"picture (limit {t * 1000:.0f} ms)")
+        if v["change_s"] is None:
+            return (f"sound ends {_ends(v['master_s'])} the picture in the master; the "
+                    f"recording doesn't say where its streams end, so this can't be compared")
+        return (f"sound ends {_ends(v['recording_s'])} the picture in the recording and "
+                f"{_ends(v['master_s'])} in the master: moved {abs(v['change_s']) * 1000:.0f} ms "
+                f"(limit {t * 1000:.0f} ms)")
     if check.check in ("black_spans", "frozen_spans"):
         if not v:
             return f"none of {t:g} s or longer"
-        return ", ".join(f"{_clock(s['start_s'])}–{_clock(s['end_s'])} "
-                         f"({s['end_s'] - s['start_s']:.1f} s)" for s in v)
+        return (f"{len(v)} of {t:g} s or longer, listed for later phases: "
+                + ", ".join(f"{_clock(s['start_s'])}–{_clock(s['end_s'])} "
+                            f"({s['end_s'] - s['start_s']:.1f} s)" for s in v))
     if check.check == "loudness":
         if v is None:
             return "no sound, nothing to measure"
@@ -265,7 +282,8 @@ def run(pre: Preflight, stage_in: StageIn, media_info: MediaInfo, master: Path,
         check_length(float(info["format"]["duration"]), media_info.duration_s,
                      get(config, "qc.duration_tolerance_s")),
         check_audio_vs_video(info["streams"], fps, get(config, "qc.av_sync_tolerance_frames"),
-                             track.sample_rate if track and has_audio else None),
+                             track.sample_rate if track and has_audio else None,
+                             track.end_offset_s if track else None),
         check_spans("black_spans", black),
         check_spans("frozen_spans", frozen),
         check_loudness(measured),
