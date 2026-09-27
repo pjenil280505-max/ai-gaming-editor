@@ -27,8 +27,10 @@ def media_info() -> dict:
             "vfr_evidence": "frame durations range 16.7–33.3 ms",
         },
         "audio_tracks": [
-            {"index": 0, "codec": "aac", "sample_rate": 44100, "channels": 2, "start_offset_s": 0.0},
-            {"index": 1, "codec": "aac", "sample_rate": 48000, "channels": 1, "start_offset_s": 0.5},
+            {"index": 0, "codec": "aac", "sample_rate": 44100, "channels": 2, "start_offset_s": 0.0,
+             "end_offset_s": -0.060345},
+            {"index": 1, "codec": "aac", "sample_rate": 48000, "channels": 1, "start_offset_s": 0.5,
+             "end_offset_s": None},                    # file records no stream lengths (DEC-031)
         ],
         "target_fps": 60,
         "audio_track_index": 0,
@@ -78,7 +80,8 @@ def run_report() -> dict:
 
 def qc_results() -> dict:
     return {"checks": [
-        {"check": "audio_vs_video_length", "status": "pass", "value": 0.015, "threshold": 0.0399},
+        {"check": "audio_vs_video_length", "status": "pass",
+         "value": {"recording_s": -0.06, "master_s": -0.06, "change_s": 0.001}, "threshold": 0.038},
         {"check": "frozen_spans", "status": "warn", "value": [{"start_s": 6.0, "end_s": 9.0}],
          "threshold": 2.0},
         {"check": "loudness", "status": "pass",

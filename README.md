@@ -6,13 +6,14 @@ Drive. Working rules are in [CLAUDE.md](CLAUDE.md), the plan in
 [docs/ROADMAP.md](docs/ROADMAP.md), the current phase in
 [docs/PHASE0.md](docs/PHASE0.md), decisions in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-## What exists (Phase 0, increment 0.5)
+## What exists (Phase 0, increment 0.5.1)
 
 Stages S0–S5 and the S6 report run from the Colab notebook and save `media_info.json`,
 `master.mp4`, `analysis.mp4`, `analysis.wav`, `qc.json`, `run_report.json`, `summary.txt`, stage
 records (`stages/`) and logs to Drive. Re-running after a disconnect skips the stages that finished.
-S5 checks the master (constant frame rate, length, sound vs picture length), lists black and
-frozen spans and measures loudness; `summary.txt` shows every check.
+S5 checks the master (constant frame rate, length, sound vs picture alignment against the
+recording), lists black and frozen spans for later phases and measures loudness;
+`summary.txt` shows every check.
 
 | Path | What it is |
 | --- | --- |
@@ -36,8 +37,8 @@ frozen spans and measures loudness; `summary.txt` shows every check.
 ## Running on Colab from Android
 
 1. Upload a recording to **My Drive › AIEditor › inbox** (create the folders once).
-2. Open the notebook at the tag you were given, e.g. for `v0.5.0`:
-   `https://colab.research.google.com/github/pjenil280505-max/ai-gaming-editor/blob/v0.5.0/notebooks/run_pipeline.ipynb`
+2. Open the notebook at the tag you were given, e.g. for `v0.5.1`:
+   `https://colab.research.google.com/github/pjenil280505-max/ai-gaming-editor/blob/v0.5.1/notebooks/run_pipeline.ipynb`
    Always open the notebook at the new tag; C5 stops if the notebook and the code are from different releases.
 3. Tap ▶ on C1 (allow Drive access), then C2 and C3.
 4. Run C4 with **recording** empty to see the numbered inbox list, type the number, run C4 again.
@@ -50,7 +51,7 @@ frozen spans and measures loudness; `summary.txt` shows every check.
 
 No GitHub token is needed while the repo is public (DEC-018).
 
-**Creating a tag (owner, after merging an increment's PR; DEC-019).** In the phone browser open the repo on github.com → **Releases** → **Draft a new release** → **Select tag**, type the name Claude gave you (e.g. `v0.5.0`; "Nothing to show" is normal) → **Create new tag**, target **main** → release title = the tag name → **Publish release**.
+**Creating a tag (owner, after merging an increment's PR; DEC-019).** In the phone browser open the repo on github.com → **Releases** → **Draft a new release** → **Select tag**, type the name Claude gave you (e.g. `v0.5.1`; "Nothing to show" is normal) → **Create new tag**, target **main** → release title = the tag name → **Publish release**.
 
 ## Running the tests
 

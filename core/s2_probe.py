@@ -84,6 +84,14 @@ def choose_target_fps(setting, median_fps: float) -> int:
     return int(setting)
 
 
+def _end(stream: dict) -> Optional[float]:
+    """Where a stream ends on the file's timeline (start + duration); None if unrecorded."""
+    try:
+        return float(stream.get("start_time") or 0.0) + float(stream["duration"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _video_stream(streams: list[dict]) -> Optional[dict]:
     for s in streams:
         if s.get("codec_type") == "video" and not s.get("disposition", {}).get("attached_pic"):
@@ -130,12 +138,16 @@ def measure(path: Path, config: dict, name: str) -> MediaInfo:
         warnings.append(f"The recording runs at about {median_fps:.1f} fps; the master will be "
                         f"{target} fps, so some frames will be {action}.")
 
-    video_start = float(video.get("start_time") or 0.0)
+    video_start, video_end = float(video.get("start_time") or 0.0), _end(video)
+    audio = [x for x in streams if x.get("codec_type") == "audio"]
+    ends = [_end(s) for s in audio]
     tracks = [
         AudioTrack(index=i, codec=s.get("codec_name", "unknown"),
                    sample_rate=int(s.get("sample_rate") or 0), channels=int(s.get("channels") or 0),
-                   start_offset_s=round(float(s.get("start_time") or 0.0) - video_start, 6))
-        for i, s in enumerate(x for x in streams if x.get("codec_type") == "audio")
+                   start_offset_s=round(float(s.get("start_time") or 0.0) - video_start, 6),
+                   end_offset_s=(None if end is None or video_end is None
+                                 else round(end - video_end, 6)))
+        for i, (s, end) in enumerate(zip(audio, ends))
     ]
     wanted = get(config, "audio.track_index")
     chosen: Optional[int] = None
